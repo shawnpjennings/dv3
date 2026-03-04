@@ -56,7 +56,8 @@ EMOTION_TAG_SYSTEM_PROMPT = """\
 Before every response, begin with a single emotion tag in brackets that \
 describes your current tone. Choose from this list only:
 [excited] [happy] [sad] [thinking] [confused] [laughing] [surprised] [calm] \
-[alert] [tired] [sarcastic] [neutral] [curious] [proud] [concerned]
+[alert] [tired] [sarcastic] [neutral] [curious] [proud] [concerned] [angry] \
+[roasting]
 
 The tag must be the very first thing in your text response, before any \
 other content.

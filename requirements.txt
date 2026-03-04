@@ -7,7 +7,7 @@ google-genai>=1.0.0
 sounddevice>=0.4.6
 numpy>=1.24.0
 
-# Wake Word
+# Wake Word (use ONNX backend — tflite-runtime lacks Python 3.12+ wheels)
 openwakeword>=0.6.0
 onnxruntime>=1.16.0
 

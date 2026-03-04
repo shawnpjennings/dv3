@@ -46,6 +46,24 @@ emotions:
   proud:
     directory: data/animations/emotions/proud
     fallback: happy
+  angry:
+    directory: data/animations/emotions/angry
+    fallback: sarcastic
+  roasting:
+    directory: data/animations/emotions/roasting
+    fallback: sarcastic
+
+# Application states — separate from emotions, driven by state machine
+states:
+  idle:
+    directory: data/animations/states/idle
+    fallback_emotion: neutral   # use neutral emotion bucket if state dir empty
+  listening:
+    directory: data/animations/states/listening
+    fallback_emotion: alert     # use alert emotion bucket if state dir empty
+  processing:
+    directory: data/animations/states/processing
+    fallback_emotion: thinking  # use thinking emotion bucket if state dir empty
 
 # Contextual triggers — keywords matched against user speech AND Gemini text
 # Priority: contextual > emotion > neutral
@@ -99,3 +117,5 @@ keyword_fallback:
   surprised: ["really", "seriously", "no way", "unexpected"]
   laughing: ["haha", "lol", "funny", "hilarious"]
   calm: ["okay", "alright", "sure", "understood"]
+  angry: ["angry", "furious", "outraged", "pissed", "damn", "ugh"]
+  roasting: ["roast", "burn", "got you", "owned", "savage", "destroyed", "wrecked"]
