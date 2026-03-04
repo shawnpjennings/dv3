@@ -1,0 +1,101 @@
+# DV3 Emotion → Animation Bucket Mapping
+
+emotions:
+  happy:
+    directory: data/animations/emotions/happy
+    fallback: neutral
+  excited:
+    directory: data/animations/emotions/excited
+    fallback: happy
+  sad:
+    directory: data/animations/emotions/sad
+    fallback: calm
+  thinking:
+    directory: data/animations/emotions/thinking
+    fallback: neutral
+  confused:
+    directory: data/animations/emotions/confused
+    fallback: thinking
+  laughing:
+    directory: data/animations/emotions/laughing
+    fallback: happy
+  surprised:
+    directory: data/animations/emotions/surprised
+    fallback: excited
+  calm:
+    directory: data/animations/emotions/calm
+    fallback: neutral
+  alert:
+    directory: data/animations/emotions/alert
+    fallback: excited
+  tired:
+    directory: data/animations/emotions/tired
+    fallback: calm
+  sarcastic:
+    directory: data/animations/emotions/sarcastic
+    fallback: neutral
+  neutral:
+    directory: data/animations/emotions/neutral
+    fallback: calm
+  concerned:
+    directory: data/animations/emotions/concerned
+    fallback: sad
+  curious:
+    directory: data/animations/emotions/curious
+    fallback: thinking
+  proud:
+    directory: data/animations/emotions/proud
+    fallback: happy
+
+# Contextual triggers — keywords matched against user speech AND Gemini text
+# Priority: contextual > emotion > neutral
+contextual_triggers:
+  music:
+    - patterns: ["pink floyd", "dark side of the moon"]
+      file: data/animations/contextual/music/pink_floyd_prism.webp
+      duration: 8.0
+      priority: 10
+    - patterns: ["jazz"]
+      directory: data/animations/contextual/music/jazz
+      duration: 10.0
+      priority: 8
+    - patterns: ["rock", "metal", "heavy metal"]
+      directory: data/animations/contextual/music/rock
+      duration: 10.0
+      priority: 7
+    - patterns: ["classical", "orchestra", "symphony"]
+      directory: data/animations/contextual/music/classical
+      duration: 10.0
+      priority: 7
+    - patterns: ["hip hop", "rap"]
+      directory: data/animations/contextual/music/hiphop
+      duration: 10.0
+      priority: 7
+  weather:
+    - patterns: ["sunny", "sunshine", "clear sky"]
+      directory: data/animations/contextual/weather/sun
+      duration: 8.0
+      priority: 7
+    - patterns: ["rain", "raining", "rainy"]
+      directory: data/animations/contextual/weather/rain
+      duration: 8.0
+      priority: 7
+    - patterns: ["snow", "snowing", "blizzard"]
+      directory: data/animations/contextual/weather/snow
+      duration: 8.0
+      priority: 7
+    - patterns: ["storm", "thunder", "lightning"]
+      directory: data/animations/contextual/weather/storm
+      duration: 8.0
+      priority: 8
+
+# Keyword fallback — used when no [emotion] tag detected in first 30 tokens
+keyword_fallback:
+  excited: ["!", "amazing", "awesome", "incredible", "fantastic", "wow"]
+  thinking: ["hmm", "interesting", "let me think", "consider", "well"]
+  concerned: ["sorry", "unfortunately", "afraid", "apologize", "regret"]
+  happy: ["great", "wonderful", "glad", "pleased", "delighted"]
+  confused: ["not sure", "unclear", "confusing", "strange", "odd"]
+  surprised: ["really", "seriously", "no way", "unexpected"]
+  laughing: ["haha", "lol", "funny", "hilarious"]
+  calm: ["okay", "alright", "sure", "understood"]

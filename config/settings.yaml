@@ -1,0 +1,56 @@
+# DV3 Settings
+# All user-specific values come from .env — this file is safe to commit.
+
+# Wake Word
+wake_word:
+  model_path: "temp/wakeword/Hey_Domino.onnx"
+  detection_threshold: 0.5
+  sample_rate: 16000
+  chunk_size: 1280  # 80ms at 16kHz
+
+# Voice Pipeline
+voice:
+  backend: "gemini_live"  # "gemini_live" or "modular"
+  model: "gemini-2.5-flash-native-audio-preview"
+  sample_rate: 16000
+  channels: 1
+  audio_format: "int16"
+  reconnect_max_retries: 5
+  reconnect_base_delay: 1.0  # seconds, exponential backoff
+
+# Audio Devices (null = system default via PulseAudio)
+audio:
+  input_device: null
+  output_device: null
+  prefer_pulse: true  # prefer PulseAudio backend over ALSA in WSL2
+
+# Visualizer
+visualizer:
+  fullscreen: true
+  target_fps: 60
+  animation_height_pct: 0.45  # % of screen height
+  gradient:
+    opacity: 85  # 0-100%
+    size: 70     # how far inward gradient extends, % of animation area
+  crossfade_ms: 300
+  frame_cache_ahead: 30
+
+# Emotion Parser
+emotion:
+  tag_buffer_tokens: 30
+  default_emotion: "neutral"
+
+# Animations
+animations:
+  base_dir: "data/animations"
+  contextual_return_delay: 8.0  # seconds before returning to emotion animation
+
+# Spotify (credentials in .env, never here)
+spotify:
+  scope: "user-read-playback-state user-modify-playback-state user-read-currently-playing"
+  cache_path: ".cache/spotify_token"
+
+# Timer
+timer:
+  alert_sound: null  # path to alert WAV, null = TTS announcement
+  max_concurrent: 10

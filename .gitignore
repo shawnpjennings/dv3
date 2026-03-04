@@ -1,0 +1,15 @@
+.env
+temp_images/
+temp/
+__pycache__/
+*.pyc
+venv/
+.pytest_cache/
+*.onnx
+*.tflite
+data/animations/inbox/
+.beads/
+*.egg-info/
+dist/
+build/
+.cache/
