@@ -53,7 +53,8 @@ class SystemTools:
             Result dict with ``time`` key (e.g. ``"3:45 PM"``).
         """
         now = datetime.now().astimezone()
-        time_str = now.strftime("%-I:%M %p")
+        # Use %#I on Windows, %-I on Linux/macOS for no-padding hour
+        time_str = now.strftime("%I:%M %p").lstrip("0")
         tz_name = now.strftime("%Z") or now.tzname() or "local"
 
         logger.debug("get_time -> %s (%s)", time_str, tz_name)
