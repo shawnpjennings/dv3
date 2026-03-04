@@ -41,10 +41,17 @@ COL_TEXT_DIM = (0x80, 0x80, 0x80)
 
 
 def _pil_to_surface(pil_image: Image.Image) -> pygame.Surface:
-    """Convert a PIL RGBA image to a pygame Surface."""
+    """Convert a PIL RGBA image to a pygame Surface.
+
+    Avoids convert_alpha() which requires pygame.display and fails in
+    background threads.  Instead, blit the raw RGBA surface onto a
+    SRCALPHA surface which preserves per-pixel alpha without a display.
+    """
     rgba = pil_image.convert("RGBA")
-    data = rgba.tobytes()
-    return pygame.image.fromstring(data, rgba.size, "RGBA").convert_alpha()
+    raw = pygame.image.fromstring(rgba.tobytes(), rgba.size, "RGBA")
+    surf = pygame.Surface(rgba.size, pygame.SRCALPHA, 32)
+    surf.blit(raw, (0, 0))
+    return surf
 
 
 def _fit_surface(surface: pygame.Surface, max_w: int, max_h: int) -> pygame.Surface:

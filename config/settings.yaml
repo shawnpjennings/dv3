@@ -28,9 +28,9 @@ audio:
 visualizer:
   fullscreen: true
   target_fps: 60
-  animation_height_pct: 0.45  # % of screen height
+  animation_height_pct: 0.65  # % of screen height
   gradient:
-    opacity: 85  # 0-100%
+    opacity: 60  # 0-100% — lower = more visible animation, higher = more vignette
     size: 70     # how far inward gradient extends, % of animation area
   crossfade_ms: 300
   frame_cache_ahead: 30

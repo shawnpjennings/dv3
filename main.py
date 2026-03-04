@@ -269,7 +269,7 @@ class DV3App:
         self._sd = None
 
         # Current emotion for visualizer
-        self._current_emotion: str = "neutral"
+        self._current_emotion: str = ""
 
         # Pygame surface
         self._screen: Optional[pygame.Surface] = None
@@ -296,23 +296,13 @@ class DV3App:
         from visualizer.animation_engine import AnimationEngine
         self.animation_engine = AnimationEngine(vis_cfg)
 
-        grad_cfg = vis_cfg.get("gradient", {})
-        # We need the animation rect size for the gradient. Use a
-        # placeholder until we have an actual animation loaded.
-        anim_rect = self.display.get_animation_rect(
-            (self.display.screen_width, self.display.screen_height)
-        )
+        self._grad_cfg = vis_cfg.get("gradient", {})
         from visualizer.gradient_overlay import GradientOverlay
-        self.gradient = GradientOverlay(
-            size=(anim_rect.width, anim_rect.height),
-            opacity=grad_cfg.get("opacity", 85),
-            gradient_size=grad_cfg.get("size", 70),
-        )
-
-        # Set animation engine target size to match the animation rect
-        self.animation_engine.set_target_size(
-            (anim_rect.width, anim_rect.height)
-        )
+        # Gradient and target size are set after loading the initial
+        # animation so they match the actual animation aspect ratio,
+        # not the screen aspect ratio.
+        self.gradient: Optional[GradientOverlay] = None
+        self._GradientOverlay = GradientOverlay
 
         # ---- Emotion mapper ----
         emotion_map_path = PROJECT_ROOT / "config" / "emotion_map.yaml"
@@ -329,6 +319,14 @@ class DV3App:
 
         # ---- Load initial (neutral) animation ----
         self._set_emotion("neutral", crossfade=False)
+        if self.animation_engine._animation is not None:
+            logger.info(
+                "Initial animation loaded: %s (%d frames)",
+                self.animation_engine._animation.path,
+                self.animation_engine._animation.frame_count,
+            )
+        else:
+            logger.warning("No initial animation loaded — display will be black")
 
         # ---- Emotion parser ----
         self.emotion_parser = _InlineEmotionAdapter(self.config)
@@ -805,6 +803,25 @@ class DV3App:
         except (FileNotFoundError, ValueError) as exc:
             logger.error("Failed to load animation %s: %s", anim_path, exc)
             return
+
+        # On first animation load, set up the target size and gradient
+        # based on the actual animation aspect ratio (not the screen's).
+        if self.gradient is None and animation.frames:
+            native_size = animation.frames[0].size  # (w, h) from PIL
+            anim_rect = self.display.get_animation_rect(native_size)
+            self.animation_engine.set_target_size(
+                (anim_rect.width, anim_rect.height)
+            )
+            self.gradient = self._GradientOverlay(
+                size=(anim_rect.width, anim_rect.height),
+                opacity=self._grad_cfg.get("opacity", 60),
+                gradient_size=self._grad_cfg.get("size", 70),
+            )
+            logger.info(
+                "Animation target: %dx%d (from %dx%d source)",
+                anim_rect.width, anim_rect.height,
+                native_size[0], native_size[1],
+            )
 
         if crossfade:
             self.animation_engine.crossfade_to(animation)
