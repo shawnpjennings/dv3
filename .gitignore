@@ -13,3 +13,5 @@ data/animations/inbox/
 dist/
 build/
 .cache/
+*Zone.Identifier
+*.lnk
