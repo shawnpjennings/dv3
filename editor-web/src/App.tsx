@@ -328,6 +328,11 @@ function AppContent() {
         setExportStatus(status);
         setExportProgress(progress);
       });
+      // Stamp export timestamp on all successfully exported assets
+      const exportedAt = new Date().toISOString();
+      for (const asset of assetsToExport) {
+        await updateAsset(asset.id, { lastExportedAt: exportedAt });
+      }
     } catch (err) {
       console.error('Export failed:', err);
       const details = err instanceof Error ? err.message : String(err);

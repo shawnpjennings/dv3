@@ -43,6 +43,7 @@ export interface Asset {
   editStack: EditAction[];
   historyIndex: number;
   linkedVariantId?: string;
+  lastExportedAt?: string;
 }
 
 export interface EditorSettings {

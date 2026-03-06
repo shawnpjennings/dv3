@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, Search, CheckSquare, Square, Link2, Settings as SettingsIcon, Layers, Type, Trash2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, Search, CheckSquare, Square, Link2, Settings as SettingsIcon, Layers, Type, Trash2, Pencil, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Asset, BatchRenamePayload } from '../types';
 import { EMOTIONS, CONTEXTS } from '../constants';
 
@@ -174,6 +174,24 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
+
+                  {asset.editStack.length > 0 && !asset.lastExportedAt && (
+                    <div className="absolute bottom-6 left-1 flex items-center bg-amber-500/90 rounded px-1 py-0.5" title="Has pending edits — not yet exported">
+                      <Pencil className="w-2.5 h-2.5 text-black" />
+                    </div>
+                  )}
+
+                  {asset.editStack.length > 0 && asset.lastExportedAt && (
+                    <div className="absolute bottom-6 left-1 flex items-center bg-amber-500/90 rounded px-1 py-0.5" title="Edited since last export">
+                      <AlertCircle className="w-2.5 h-2.5 text-black" />
+                    </div>
+                  )}
+
+                  {asset.editStack.length === 0 && asset.lastExportedAt && (
+                    <div className="absolute bottom-6 left-1 flex items-center bg-green-500/90 rounded px-1 py-0.5" title={`Exported to DV3 ${new Date(asset.lastExportedAt).toLocaleDateString()}`}>
+                      <CheckCircle2 className="w-2.5 h-2.5 text-black" />
+                    </div>
+                  )}
 
                   {fileTypeBadge && (
                     <div className={`absolute bottom-6 right-1 px-1 py-0.5 rounded font-bold uppercase text-[8px] leading-none ${fileTypeBadge.className}`}>

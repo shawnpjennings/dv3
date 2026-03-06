@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Undo, Redo, Copy, Download, Folder, Link2, X, Trash2 } from 'lucide-react';
+import { Undo, Redo, Copy, Download, Folder, Link2, X, Trash2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Asset } from '../types';
 
 interface TopToolbarProps {
@@ -37,6 +37,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 
   const canUndo = activeAsset.historyIndex >= 0;
   const canRedo = activeAsset.historyIndex < activeAsset.editStack.length - 1;
+  const hasPendingEdits = activeAsset.editStack.length > 0;
+  const wasExported = !!activeAsset.lastExportedAt;
 
   return (
     <div className="h-14 border-b border-white/10 bg-black/90 backdrop-blur flex items-center justify-between px-4 shrink-0 z-10">
@@ -83,6 +85,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         <button onClick={onDelete} className="flex items-center gap-2 px-3 py-1.5 bg-red-900/60 hover:bg-red-800 text-red-100 rounded text-sm transition-colors border border-red-700/50">
           <Trash2 className="w-4 h-4"/> Remove
         </button>
+        {wasExported && !hasPendingEdits && (
+          <div className="flex items-center gap-1 text-green-400 text-xs" title={`In DV3 library since ${new Date(activeAsset.lastExportedAt!).toLocaleDateString()}`}>
+            <CheckCircle2 className="w-3.5 h-3.5" /> In DV3
+          </div>
+        )}
+        {wasExported && hasPendingEdits && (
+          <div className="flex items-center gap-1 text-amber-400 text-xs" title="Edits applied since last export — re-export to update DV3">
+            <AlertCircle className="w-3.5 h-3.5" /> Edited since export
+          </div>
+        )}
         <button onClick={onExport} title="Applies all edits and renders a new WebP file for download" className="flex items-center gap-2 px-3 py-1.5 bg-[#f97316] hover:bg-[#fb923c] text-white rounded text-sm font-medium shadow-lg shadow-[#f97316]/20 transition-all">
           <Download className="w-4 h-4"/> Render & Export WebP
         </button>

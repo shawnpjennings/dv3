@@ -55,6 +55,7 @@ export const saveAssetToDB = async (asset: Asset): Promise<boolean> => {
         editStack: asset.editStack,
         historyIndex: asset.historyIndex,
         linkedVariantId: asset.linkedVariantId,
+        lastExportedAt: asset.lastExportedAt,
       };
 
       tx.objectStore(STORE_ASSETS).put(assetToSave);
