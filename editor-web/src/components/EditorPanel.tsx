@@ -279,8 +279,6 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
   })();
 
   const zoomOffset = getEditValue('PADDING', 0) as number;
-  const posX = getEditValue('POSITION_X', 0) as number;
-  const posY = getEditValue('POSITION_Y', 0) as number;
   const outfillEnabled = getEditValue('OUTFILL_ENABLED', false) as boolean;
   const outfillColorNum = getEditValue('OUTFILL_COLOR', 0x000000) as number;
   const outfillColorHex = `#${Math.max(0, Math.min(0xffffff, outfillColorNum)).toString(16).padStart(6, '0')}`;

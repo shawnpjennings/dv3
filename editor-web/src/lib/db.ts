@@ -1,10 +1,12 @@
 import { Asset, AssetTheme, EditorSettings } from '../types';
 
 export const DB_NAME = 'DV3EditorDB';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 export const STORE_ASSETS = 'assets';
 export const STORE_SETTINGS = 'settings';
+export const STORE_FS_HANDLES = 'fs_handles';
 export const SETTINGS_KEY = 'user_settings';
+export const FS_HANDLE_KEY = 'dv3_library';
 
 export const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -18,6 +20,9 @@ export const initDB = (): Promise<IDBDatabase> => {
         }
         if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
           db.createObjectStore(STORE_SETTINGS, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORE_FS_HANDLES)) {
+          db.createObjectStore(STORE_FS_HANDLES, { keyPath: 'id' });
         }
       };
 
@@ -145,6 +150,39 @@ export const loadSettingsFromDB = async (): Promise<EditorSettings | null> => {
     });
   } catch (err) {
     console.warn('Failed to load settings from DB.', err);
+    return null;
+  }
+};
+
+export const saveDirectoryHandle = async (handle: FileSystemDirectoryHandle): Promise<boolean> => {
+  try {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_FS_HANDLES, 'readwrite');
+      tx.objectStore(STORE_FS_HANDLES).put({ id: FS_HANDLE_KEY, handle });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('Failed to save directory handle to DB.', err);
+    return false;
+  }
+};
+
+export const loadDirectoryHandle = async (): Promise<FileSystemDirectoryHandle | null> => {
+  try {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_FS_HANDLES, 'readonly');
+      const request = tx.objectStore(STORE_FS_HANDLES).get(FS_HANDLE_KEY);
+      request.onsuccess = () => {
+        const row = request.result as { id: string; handle: FileSystemDirectoryHandle } | undefined;
+        resolve(row?.handle ?? null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.warn('Failed to load directory handle from DB.', err);
     return null;
   }
 };

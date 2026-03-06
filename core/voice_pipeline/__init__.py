@@ -11,9 +11,16 @@ on the ``voice.backend`` setting in config/settings.yaml.
 """
 
 from .base import VoicePipelineBase
-from .gemini_live import GeminiLivePipeline
 
 __all__ = [
     "VoicePipelineBase",
     "GeminiLivePipeline",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy-import GeminiLivePipeline to avoid hard dependency on google-genai."""
+    if name == "GeminiLivePipeline":
+        from .gemini_live import GeminiLivePipeline
+        return GeminiLivePipeline
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

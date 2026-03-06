@@ -145,10 +145,31 @@ const decodeAnimatedToPngSequence = async (
   };
 };
 
+// Resolve the subdirectory path for an asset: emotions/{emotion}/ or contextual/{context}/
+const resolveExportSubpath = (asset: Asset): string[] => {
+  if (asset.context && asset.context !== 'idle') {
+    return ['contextual', asset.context];
+  }
+  return ['emotions', asset.emotion || 'neutral'];
+};
+
+// Walk a FileSystemDirectoryHandle to a nested path, creating subdirs as needed.
+const getNestedDir = async (
+  root: FileSystemDirectoryHandle,
+  parts: string[]
+): Promise<FileSystemDirectoryHandle> => {
+  let current = root;
+  for (const part of parts) {
+    current = await current.getDirectoryHandle(part, { create: true });
+  }
+  return current;
+};
+
 export const executeBatchExport = async (
   assetsToExport: Asset[],
   settings: EditorSettings,
-  onProgress: (status: string, progress: number) => void
+  onProgress: (status: string, progress: number) => void,
+  dirHandle?: FileSystemDirectoryHandle
 ) => {
   if (!ffmpeg) {
     onProgress('Initializing FFmpeg engine...', 0);
@@ -525,12 +546,33 @@ export const executeBatchExport = async (
   const manifestJson = JSON.stringify(manifest, null, 2);
   const manifestBytes = new TextEncoder().encode(manifestJson);
 
+  // --- Filesystem export (File System Access API) ---
+  if (dirHandle) {
+    onProgress('Writing files to DV3 library...', 98);
+    for (let i = 0; i < encodedOutputs.length; i++) {
+      const output = encodedOutputs[i];
+      const asset = assetsToExport[i];
+      const subPath = resolveExportSubpath(asset);
+      const subDir = await getNestedDir(dirHandle, subPath);
+      const fileHandle = await subDir.getFileHandle(output.name, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(new Blob([output.bytes.buffer as ArrayBuffer]));
+      await writable.close();
+    }
+    // Write manifest.json to root of the DV3 library dir
+    const manifestHandle = await dirHandle.getFileHandle('manifest.json', { create: true });
+    const manifestWritable = await manifestHandle.createWritable();
+    await manifestWritable.write(new Blob([manifestBytes.buffer as ArrayBuffer]));
+    await manifestWritable.close();
+    onProgress('Complete!', 100);
+    return;
+  }
+
+  // --- ZIP download fallback ---
   if (encodedOutputs.length === 1) {
     const only = encodedOutputs[0];
     const safeBytes = new Uint8Array(only.bytes.length);
     safeBytes.set(only.bytes);
-
-    // For single exports: download WebP + manifest as zip.
     const zip = new JSZip();
     zip.file(only.name, safeBytes);
     zip.file('manifest.json', manifestBytes);

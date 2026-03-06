@@ -6,9 +6,16 @@ import { TopToolbar } from './components/TopToolbar';
 import { EditorPanel } from './components/EditorPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { deleteAssetFromDB, loadAssetsFromDB, saveAssetToDB, loadSettingsFromDB, saveSettingsToDB } from './lib/db';
+import { deleteAssetFromDB, loadAssetsFromDB, saveAssetToDB, loadSettingsFromDB, saveSettingsToDB, saveDirectoryHandle, loadDirectoryHandle } from './lib/db';
 import { executeBatchExport } from './lib/exportUtils';
 import { validateUpload } from './lib/validation';
+
+// FileSystemDirectoryHandle.queryPermission/requestPermission are widely supported
+// but not yet in the TypeScript lib.
+type DirHandle = FileSystemDirectoryHandle & {
+  queryPermission: (opts: { mode: string }) => Promise<PermissionState>;
+  requestPermission: (opts: { mode: string }) => Promise<PermissionState>;
+};
 
 function AppContent() {
   const [isReady, setIsReady] = useState(false);
@@ -32,6 +39,8 @@ function AppContent() {
     defaultPadding: 0
   });
 
+  const [dirHandle, setDirHandle] = useState<DirHandle | null>(null);
+
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
   const [exportProgress, setExportProgress] = useState(0);
@@ -45,9 +54,10 @@ function AppContent() {
 
     const initData = async () => {
       try {
-        const [savedAssets, savedSettings] = await Promise.all([
+        const [savedAssets, savedSettings, savedHandle] = await Promise.all([
           loadAssetsFromDB(),
-          loadSettingsFromDB()
+          loadSettingsFromDB(),
+          loadDirectoryHandle(),
         ]);
 
         if (!isMounted) return;
@@ -59,6 +69,16 @@ function AppContent() {
         if (savedAssets && savedAssets.length > 0) {
           setAssets(savedAssets);
           setActiveAssetId(savedAssets[0].id);
+        }
+
+        if (savedHandle) {
+          // Re-verify permission (browser requires re-grant after page reload)
+          const typedHandle = savedHandle as DirHandle;
+          const perm = await typedHandle.queryPermission({ mode: 'readwrite' });
+          if (perm === 'granted') {
+            setDirHandle(typedHandle);
+          }
+          // If 'prompt', we'll request on first export attempt
         }
       } catch (err) {
         console.error('Failed to initialize DB data:', err);
@@ -158,6 +178,20 @@ function AppContent() {
     setSettings(newSettings);
     await saveSettingsToDB(newSettings);
     setShowSettings(false);
+  };
+
+  const handleSelectFolder = async () => {
+    try {
+      const handle = await (window as unknown as { showDirectoryPicker: (opts?: object) => Promise<DirHandle> })
+        .showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
+      await saveDirectoryHandle(handle);
+      setDirHandle(handle);
+    } catch (err) {
+      // User cancelled picker — ignore
+      if (err instanceof Error && err.name !== 'AbortError') {
+        console.error('Failed to select folder:', err);
+      }
+    }
   };
 
   const activeAsset = assets.find(a => a.id === activeAssetId);
@@ -320,15 +354,26 @@ function AppContent() {
   };
 
   const doExport = async (assetsToExport: Asset[]) => {
+    // If we have a saved handle, ensure permission is still granted
+    let activeHandle = dirHandle;
+    if (activeHandle) {
+      const perm = await activeHandle.queryPermission({ mode: 'readwrite' });
+      if (perm === 'prompt') {
+        const granted = await activeHandle.requestPermission({ mode: 'readwrite' });
+        if (granted !== 'granted') activeHandle = null;
+      } else if (perm === 'denied') {
+        activeHandle = null;
+      }
+    }
+
     setIsExporting(true);
     setExportProgress(0);
-    setExportStatus('Starting export...');
+    setExportStatus(activeHandle ? 'Writing to DV3 library...' : 'Starting export...');
     try {
       await executeBatchExport(assetsToExport, settings, (status, progress) => {
         setExportStatus(status);
         setExportProgress(progress);
-      });
-      // Stamp export timestamp on all successfully exported assets
+      }, activeHandle ?? undefined);
       const exportedAt = new Date().toISOString();
       for (const asset of assetsToExport) {
         await updateAsset(asset.id, { lastExportedAt: exportedAt });
@@ -384,7 +429,13 @@ function AppContent() {
   };
 
   const dv3PathPreview = activeAsset
-    ? `${settings.exportRoot}/${activeAsset.emotion !== 'neutral' ? `emotions/${activeAsset.emotion}` : `contextual/${activeAsset.context}`}/${activeAsset.name.replace(/\s+/g, '_').toLowerCase()}.webp`
+    ? (() => {
+        const subpath = (activeAsset.context && activeAsset.context !== 'idle')
+          ? `contextual/${activeAsset.context}`
+          : `emotions/${activeAsset.emotion || 'neutral'}`;
+        const root = dirHandle ? dirHandle.name : settings.exportRoot;
+        return `${root}/${subpath}/${activeAsset.name.replace(/\s+/g, '_').toLowerCase()}.webp`;
+      })()
     : '';
 
   if (!isReady) {
@@ -489,8 +540,10 @@ function AppContent() {
       {showSettings && (
         <SettingsModal
           settings={settings}
+          folderName={dirHandle?.name ?? null}
           onClose={() => setShowSettings(false)}
           onSave={handleSaveSettings}
+          onSelectFolder={handleSelectFolder}
         />
       )}
 
