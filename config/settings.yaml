@@ -11,7 +11,7 @@ wake_word:
 # Voice Pipeline
 voice:
   backend: "gemini_live"  # "gemini_live" or "modular"
-  model: "gemini-2.5-flash-native-audio-preview"
+  model: "gemini-2.5-flash-native-audio-latest"
   sample_rate: 16000
   channels: 1
   audio_format: "int16"

@@ -338,7 +338,7 @@ class GeminiLivePipeline(VoicePipelineBase):
     def _build_config(self) -> dict:
         """Build the Live API session configuration dictionary."""
         return {
-            "response_modalities": ["AUDIO", "TEXT"],
+            "response_modalities": ["AUDIO"],
             "system_instruction": EMOTION_TAG_SYSTEM_PROMPT,
             "tools": TOOL_DECLARATIONS,
             "speech_config": {
