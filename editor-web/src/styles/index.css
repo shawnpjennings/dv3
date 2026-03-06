@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Orbitron:wght@500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --wb-bg: #000000;
+  --wb-accent-primary: #f97316;
+  --wb-accent-secondary: #00d2ff;
+  --wb-text: #ffffff;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: var(--wb-bg);
+  color: var(--wb-text);
+  font-family: 'Open Sans', sans-serif;
+}
+
+.font-display {
+  font-family: 'Orbitron', sans-serif;
+}
+
+.wb-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  border: none;
+  outline: none;
+  background: #4b5563;
+}
+
+.wb-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: #4b5563;
+  border: none;
+}
+
+.wb-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border-radius: 9999px;
+  border: none;
+  background: var(--wb-accent-primary);
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.55);
+}
+
+.wb-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: #4b5563;
+  border: none;
+}
+
+.wb-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: none;
+  background: var(--wb-accent-primary);
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.55);
+}
