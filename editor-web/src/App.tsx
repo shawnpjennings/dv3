@@ -10,6 +10,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { TagPanel } from './components/TagPanel';
 import { deleteAssetFromDB, loadAssetsFromDB, saveAssetToDB, loadSettingsFromDB, saveSettingsToDB, saveDirectoryHandle, loadDirectoryHandle } from './lib/db';
 import { executeBatchExport } from './lib/exportUtils';
+import { bakeAndSave } from './lib/bakeUtils';
 import { validateUpload } from './lib/validation';
 import { copyWebPToInbox, convertGifToInbox, getOrCreateInboxDir } from './lib/inboxUtils';
 
@@ -511,8 +512,41 @@ function AppContent() {
 
   const activeInboxItem = inboxItems.find(i => i.id === activeInboxId) ?? null;
 
-  const handleSave = (payload: SavePayload) => {
-    console.log('save', payload);
+  const handleSave = async (payload: SavePayload) => {
+    if (!activeInboxItem || !dirHandle) {
+      alert('No file selected or no folder connected. Please select a folder first.');
+      return;
+    }
+    setIsSaving(true);
+    setSaveStatus('Baking edits...');
+    try {
+      const libraryAsset = await bakeAndSave(activeInboxItem, payload, dirHandle);
+      // Add to library (replace if same filename already exists)
+      setLibraryAssets(prev => {
+        const existing = prev.findIndex(a => a.file === libraryAsset.file);
+        if (existing >= 0) {
+          const next = [...prev];
+          next[existing] = libraryAsset;
+          return next;
+        }
+        return [...prev, libraryAsset];
+      });
+      // Remove from inbox and revoke preview URL
+      URL.revokeObjectURL(activeInboxItem.previewUrl);
+      setInboxItems(prev => prev.filter(i => i.id !== activeInboxItem.id));
+      setActiveInboxId(null);
+      // Switch to Library tab and select the new asset
+      setActiveTab('library');
+      setActiveLibraryFile(libraryAsset.file);
+      setSaveStatus('Saved!');
+      setTimeout(() => setSaveStatus(''), 2000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSaveStatus(`Save failed: ${msg}`);
+      alert(`Save failed: ${msg}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!isReady) {
