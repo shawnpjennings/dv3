@@ -548,37 +548,15 @@ function AppContent() {
     if (!dirHandle) return;
 
     try {
-      // Search root, then 1-2 levels deep (same logic as LibraryPanel.loadPreviewUrl)
-      const tryGet = async (dir: FileSystemDirectoryHandle, name: string): Promise<File | null> => {
-        try {
-          const fh = await dir.getFileHandle(name);
-          return fh.getFile();
-        } catch {
-          return null;
-        }
-      };
-
-      let f: File | null = await tryGet(dirHandle, file);
-      if (!f) {
-        outer: for await (const [, entry] of (dirHandle as unknown as AsyncIterable<[string, FileSystemHandle]>)) {
-          if (entry.kind === 'directory') {
-            const subDir = entry as FileSystemDirectoryHandle;
-            f = await tryGet(subDir, file);
-            if (f) break;
-            for await (const [, subEntry] of (subDir as unknown as AsyncIterable<[string, FileSystemHandle]>)) {
-              if (subEntry.kind === 'directory') {
-                f = await tryGet(subEntry as FileSystemDirectoryHandle, file);
-                if (f) break outer;
-              }
-            }
-          }
-        }
+      // Navigate path segments (e.g. "library/filename.webp" → subdir + filename)
+      const parts = file.split('/');
+      let dir: FileSystemDirectoryHandle = dirHandle;
+      for (let i = 0; i < parts.length - 1; i++) {
+        dir = await dir.getDirectoryHandle(parts[i]);
       }
-
-      if (!f) {
-        console.warn('Could not locate file in library:', file);
-        return;
-      }
+      const filename = parts[parts.length - 1];
+      const fh = await dir.getFileHandle(filename);
+      const f = await fh.getFile();
 
       const url = URL.createObjectURL(f);
       const tempId = `lib_${file}`;
@@ -586,7 +564,7 @@ function AppContent() {
         id: tempId,
         file: f,
         previewUrl: url,
-        name: file.replace(/\.webp$/, '').replace(/\.gif$/, ''),
+        name: filename.replace(/\.webp$/, '').replace(/\.gif$/, ''),
         type: f.type || 'image/webp',
         editStack: [],
         historyIndex: -1,
@@ -650,13 +628,15 @@ function AppContent() {
         }
         return [...prev, libraryAsset];
       });
-      // Remove from inbox and revoke preview URL
+      // Remove from inbox and revoke preview URL, then select next inbox item
       URL.revokeObjectURL(activeInboxItem.previewUrl);
-      setInboxItems(prev => prev.filter(i => i.id !== activeInboxItem.id));
-      setActiveInboxId(null);
-      // Switch to Library tab and select the new asset
-      setActiveTab('library');
-      setActiveLibraryFile(libraryAsset.file);
+      setInboxItems(prev => {
+        const next = prev.filter(i => i.id !== activeInboxItem.id);
+        // Select the next available inbox item (stay on inbox tab)
+        const nextItem = next.find(i => !i.id.startsWith('lib_')) ?? next[0] ?? null;
+        setActiveInboxId(nextItem?.id ?? null);
+        return next;
+      });
       setSaveStatus('Saved!');
       setTimeout(() => setSaveStatus(''), 2000);
     } catch (err) {
@@ -705,7 +685,7 @@ function AppContent() {
 
       {/* APP HEADER */}
       <header className="h-10 flex items-center justify-between px-4 border-b border-white/10 bg-black shrink-0 z-20">
-        <span className="text-xs font-bold tracking-[0.2em] text-white uppercase">DV3 EDITOR</span>
+        <span className="text-xs font-bold tracking-[0.2em] text-[#f97316] uppercase">DV3 EDITOR</span>
         <div className="flex items-center gap-3">
           {dirHandle ? (
             <button
@@ -771,8 +751,6 @@ function AppContent() {
                 activeAsset={(activeInboxAsset ?? activeAsset)!}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
-                onDuplicate={activeInboxAsset ? handleDuplicateInbox : handleDuplicate}
-                onDelete={activeInboxAsset ? handleDeleteInbox : () => handleDeleteAsset(activeAsset!.id)}
               />
               <EditorPanel
                 activeAsset={(activeInboxAsset ?? activeAsset)!}
@@ -796,6 +774,8 @@ function AppContent() {
           saveStatus={saveStatus}
           onSave={handleSave}
           onConnectFolder={handleSelectFolder}
+          onDuplicate={activeInboxItem ? handleDuplicateInbox : undefined}
+          onDelete={activeInboxItem ? handleDeleteInbox : undefined}
         />
       </div>
 

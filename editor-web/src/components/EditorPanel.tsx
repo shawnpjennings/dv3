@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Sliders, FlipHorizontal, FlipVertical, FastForward, Maximize, Eye, EyeOff, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import { Asset, ActionType } from '../types';
 import { VariantComparison } from './VariantComparison';
+import { CircleCheck } from './CircleCheck';
 
 interface EditorPanelProps {
   activeAsset: Asset;
@@ -424,11 +425,10 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
             );
           })}
 
-          <div className="mb-5 pt-4 border-t border-white/10">
-            <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer hover:text-white transition-colors mb-3">
-              <input type="checkbox" checked={outfillEnabled} onChange={(e) => onApplyEdit('OUTFILL_ENABLED', e.target.checked)} className="w-4 h-4 rounded bg-black border-white/10 text-[#f97316] focus:ring-[#f97316]" />
-              Outfill Background
-            </label>
+          <div className="pt-4 border-t border-white/10">
+            <div className="mb-3">
+              <CircleCheck checked={outfillEnabled} onChange={(v) => onApplyEdit('OUTFILL_ENABLED', v)} label="Outfill Background" />
+            </div>
             {outfillEnabled && (
               <div className="ml-7 flex items-center gap-3 border-l border-white/10 pl-3">
                 <label className="text-[11px] uppercase tracking-wide text-white/60">Fill Color</label>
@@ -444,14 +444,8 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
           </div>
 
           <div className="space-y-3 pt-4 border-t border-white/10">
-            <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer hover:text-white transition-colors">
-              <input type="checkbox" checked={getEditValue('SQUARE_CROP', false) as boolean} onChange={(e) => onApplyEdit('SQUARE_CROP', e.target.checked)} className="w-4 h-4 rounded bg-black border-white/10 text-[#f97316] focus:ring-[#f97316]" />
-              Crop to Square 1:1
-            </label>
-            <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer hover:text-white transition-colors">
-              <input type="checkbox" checked={getEditValue('CIRCLE_MASK', false) as boolean} onChange={(e) => onApplyEdit('CIRCLE_MASK', e.target.checked)} className="w-4 h-4 rounded bg-black border-white/10 text-[#f97316] focus:ring-[#f97316]" />
-              Apply Baked Black Mask
-            </label>
+            <CircleCheck checked={getEditValue('SQUARE_CROP', false) as boolean} onChange={(v) => onApplyEdit('SQUARE_CROP', v)} label="Crop to Square 1:1" />
+            <CircleCheck checked={getEditValue('CIRCLE_MASK', false) as boolean} onChange={(v) => onApplyEdit('CIRCLE_MASK', v)} label="Apply Baked Black Mask" />
           </div>
           </div>}
         </section>
@@ -497,28 +491,10 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
           ))}
 
           <div className="pt-4 border-t border-white/10 flex flex-col gap-3">
-            <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer hover:text-white transition-colors">
-              <input type="checkbox" checked={getEditValue('GRAYSCALE', false) as boolean} onChange={(e) => onApplyEdit('GRAYSCALE', e.target.checked)} className="w-4 h-4 rounded bg-black border-white/10 text-[#f97316] focus:ring-[#f97316]" />
-              Grayscale
-            </label>
-            <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer hover:text-white transition-colors">
-              <input type="checkbox" checked={getEditValue('INVERT', false) as boolean} onChange={(e) => onApplyEdit('INVERT', e.target.checked)} className="w-4 h-4 rounded bg-black border-white/10 text-[#f97316] focus:ring-[#f97316]" />
-              Invert Colors
-            </label>
-            <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer hover:text-white transition-colors">
-              <input type="checkbox" checked={getEditValue('VIGNETTE', false) as boolean} onChange={(e) => onApplyEdit('VIGNETTE', e.target.checked)} className="w-4 h-4 rounded bg-black border-white/10 text-[#f97316] focus:ring-[#f97316]" />
-              Apply Baked Vignette
-            </label>
-
-            <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer hover:text-white transition-colors">
-              <input
-                type="checkbox"
-                checked={bgSwapEnabled}
-                onChange={(e) => onApplyEdit('BG_SWAP', e.target.checked)}
-                className="w-4 h-4 rounded bg-black border-white/10 text-[#f97316] focus:ring-[#f97316]"
-              />
-              Replace Near-Black Background (Beta)
-            </label>
+            <CircleCheck checked={getEditValue('GRAYSCALE', false) as boolean} onChange={(v) => onApplyEdit('GRAYSCALE', v)} label="Grayscale" />
+            <CircleCheck checked={getEditValue('INVERT', false) as boolean} onChange={(v) => onApplyEdit('INVERT', v)} label="Invert Colors" />
+            <CircleCheck checked={getEditValue('VIGNETTE', false) as boolean} onChange={(v) => onApplyEdit('VIGNETTE', v)} label="Apply Baked Vignette" />
+            <CircleCheck checked={bgSwapEnabled} onChange={(v) => onApplyEdit('BG_SWAP', v)} label="Replace Near-Black Background (Beta)" />
 
             {bgSwapEnabled && (
               <div className="ml-7 space-y-3 border-l border-white/10 pl-3">
@@ -612,10 +588,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
               className="w-full wb-slider"
             />
           </div>
-          <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer hover:text-white transition-colors">
-            <input type="checkbox" checked={getEditValue('REVERSE', false) as boolean} onChange={(e) => onApplyEdit('REVERSE', e.target.checked)} className="w-4 h-4 rounded bg-black border-white/10 text-[#f97316] focus:ring-[#f97316]" />
-            Reverse Frames on Save
-          </label>
+          <CircleCheck checked={getEditValue('REVERSE', false) as boolean} onChange={(v) => onApplyEdit('REVERSE', v)} label="Reverse Frames on Save" />
           </div>}
         </section>
       </div>

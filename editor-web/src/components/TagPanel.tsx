@@ -1,7 +1,9 @@
 import * as React from 'react';
 import { useState, useEffect, KeyboardEvent } from 'react';
+import { Copy, Trash2 } from 'lucide-react';
 import { AssetTheme, InboxItem, LibraryAsset, SavePayload } from '../types';
 import { EMOTIONS, STATES } from '../constants';
+import { CircleCheck } from './CircleCheck';
 
 interface TagPanelProps {
   /** The inbox item currently selected — null if nothing selected */
@@ -16,9 +18,22 @@ interface TagPanelProps {
   onSave: (payload: SavePayload) => void;
   /** Called to open the folder picker (shown inline when no folder is connected) */
   onConnectFolder?: () => void;
+  /** Called when user clicks Duplicate */
+  onDuplicate?: () => void;
+  /** Called when user clicks Remove */
+  onDelete?: () => void;
 }
 
-export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave, onConnectFolder }: TagPanelProps) {
+export function TagPanel({
+  item,
+  libraryAsset,
+  isSaving,
+  saveStatus,
+  onSave,
+  onConnectFolder,
+  onDuplicate,
+  onDelete,
+}: TagPanelProps) {
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>([]);
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [customTags, setCustomTags] = useState<string[]>([]);
@@ -129,19 +144,15 @@ export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave, onC
         {/* EMOTIONS */}
         <section>
           <h3 className={sectionHeader}>Emotions</h3>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             {EMOTIONS.map(emotion => (
-              <label key={emotion} className="flex items-center gap-2 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  className="accent-[#f97316] w-3.5 h-3.5 cursor-pointer"
-                  checked={selectedEmotions.includes(emotion)}
-                  onChange={() => toggleEmotion(emotion)}
-                />
-                <span className="text-xs text-white/70 group-hover:text-white transition-colors capitalize">
-                  {emotion}
-                </span>
-              </label>
+              <CircleCheck
+                key={emotion}
+                label={emotion}
+                checked={selectedEmotions.includes(emotion)}
+                onChange={() => toggleEmotion(emotion)}
+                className="text-xs"
+              />
             ))}
           </div>
         </section>
@@ -149,19 +160,15 @@ export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave, onC
         {/* STATES */}
         <section>
           <h3 className={sectionHeader}>States</h3>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             {STATES.map(state => (
-              <label key={state} className="flex items-center gap-2 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  className="accent-[#f97316] w-3.5 h-3.5 cursor-pointer"
-                  checked={selectedStates.includes(state)}
-                  onChange={() => toggleState(state)}
-                />
-                <span className="text-xs text-white/70 group-hover:text-white transition-colors capitalize">
-                  {state}
-                </span>
-              </label>
+              <CircleCheck
+                key={state}
+                label={state}
+                checked={selectedStates.includes(state)}
+                onChange={() => toggleState(state)}
+                className="text-xs"
+              />
             ))}
           </div>
         </section>
@@ -233,7 +240,7 @@ export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave, onC
         </section>
       </div>
 
-      {/* Save footer */}
+      {/* Save + actions footer */}
       <div className="px-4 pb-5 pt-4 border-t border-white/10 space-y-2">
         <button
           onClick={handleSave}
@@ -246,6 +253,7 @@ export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave, onC
         >
           {isSaving ? 'SAVING…' : 'SAVE'}
         </button>
+
         {saveStatus === 'no-folder' ? (
           <div className="text-center space-y-1">
             <p className="text-[10px] text-amber-400">No folder connected</p>
@@ -260,13 +268,36 @@ export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave, onC
           </div>
         ) : saveStatus ? (
           <p className="text-[10px] text-center text-white/40">{saveStatus}</p>
-        ) : null}
-        {!canSave && !isSaving && (
+        ) : !canSave && !isSaving ? (
           <p className="text-[10px] text-center text-white/25">
             {filename.trim() === ''
               ? 'Enter a filename to enable save'
               : 'Select at least one emotion or state'}
           </p>
+        ) : null}
+
+        {/* Duplicate / Remove */}
+        {(onDuplicate || onDelete) && (
+          <div className="flex gap-2 pt-1">
+            {onDuplicate && (
+              <button
+                onClick={onDuplicate}
+                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 bg-white/8 hover:bg-white/15 text-white/70 hover:text-white rounded text-xs transition-colors border border-white/10"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                Duplicate
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={onDelete}
+                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 bg-red-900/30 hover:bg-red-800/60 text-red-400 hover:text-red-200 rounded text-xs transition-colors border border-red-800/40"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Remove
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
