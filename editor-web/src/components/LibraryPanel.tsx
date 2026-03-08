@@ -148,11 +148,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-[#0a0a0a]">
       {/* Panel header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 shrink-0">
-        <span className="font-mono text-xs font-bold tracking-widest text-white/60 uppercase">Library</span>
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/10 shrink-0">
         {assets.length > 0 && (
           <span className="bg-white/10 text-white/60 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-            {assets.length}
+            {assets.length} animations
           </span>
         )}
       </div>

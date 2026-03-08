@@ -30,12 +30,11 @@ export const InboxPanel: React.FC<InboxPanelProps> = ({
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-[#0a0a0a]">
       {/* Panel header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs font-bold tracking-widest text-white/60 uppercase">Inbox</span>
           {items.length > 0 && (
             <span className="bg-[#f97316]/20 text-[#f97316] text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-              {items.length}
+              {items.length} files
             </span>
           )}
         </div>
