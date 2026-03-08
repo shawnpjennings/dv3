@@ -63,7 +63,7 @@ class EditorApp:
         directory: Root directory containing animation files to edit.
     """
 
-    def __init__(self, directory: str = "data/animations") -> None:
+    def __init__(self, directory: str = "animations") -> None:
         pygame.init()
         pygame.font.init()
 
@@ -99,6 +99,7 @@ class EditorApp:
         self._selected_path: Optional[str] = None
         self._status_message: str = f"Loaded {self._gallery.file_count()} files"
         self._status_timer: float = 0.0
+        self._prev_mouse_pressed: bool = False
 
         # Font
         self._font = pygame.font.SysFont("consolas,dejavusansmono,monospace", 11)
@@ -160,6 +161,7 @@ class EditorApp:
             self._gallery.render(self._screen)
             self._panel.render(self._screen)
             self._preview.render(self._screen)
+
             self._render_status_bar()
 
             pygame.display.flip()
@@ -180,6 +182,13 @@ class EditorApp:
             elif event.type == pygame.VIDEORESIZE:
                 self._screen = pygame.display.set_mode(
                     (event.w, event.h), pygame.RESIZABLE
+                )
+                self._resize()
+
+            elif event.type == pygame.WINDOWSIZECHANGED:
+                # SDL2/Pygame 2.x fires this on Wayland/WSLg resize
+                self._screen = pygame.display.set_mode(
+                    self._screen.get_size(), pygame.RESIZABLE
                 )
                 self._resize()
 
@@ -212,6 +221,11 @@ class EditorApp:
                 if panel_action:
                     self._dispatch_action(panel_action)
                 self._preview.handle_event(event)
+
+        # Track button state for future use (polling fallback removed --
+        # MOUSEBUTTONDOWN events work correctly in WSLg).
+        buttons = pygame.mouse.get_pressed()
+        self._prev_mouse_pressed = buttons[0]
 
     def _handle_key(self, event: pygame.event.Event) -> None:
         """Handle keyboard shortcuts."""
@@ -548,7 +562,7 @@ def main() -> None:
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
 
-    directory = "data/animations"
+    directory = "animations"
     if len(sys.argv) > 1:
         directory = sys.argv[1]
 

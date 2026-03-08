@@ -58,7 +58,7 @@ class AnimationEngine:
     Usage::
 
         engine = AnimationEngine(config)
-        anim = engine.load_animation("data/animations/emotions/happy/b1.webp")
+        anim = engine.load_animation("animations/library/b1.webp")
         engine.set_animation(anim)
 
         # Each frame of the main loop:

@@ -23,7 +23,7 @@ from visualizer.gradient_overlay import GradientOverlay
 def _find_real_animation() -> str:
     """Return the path to a real .webp animation file from the data directory.
 
-    After the inbox migration, files live in data/animations/inbox/.
+    After the inbox migration, files live in animations/inbox/.
     Falls back to any .gif if no .webp is found.  Raises FileNotFoundError
     if the data directory has no animation files at all.
     """

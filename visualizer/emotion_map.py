@@ -1,10 +1,10 @@
 """Manifest-only animation resolver for the DV3 visualizer.
 
-Reads data/animations/manifest.json to map emotion/state tags to animation
+Reads animations/manifest.json to map emotion/state tags to animation
 file paths. No directory scanning. No emotion_map.yaml.
 
 Usage:
-    mapper = EmotionMapper("data/animations/manifest.json")
+    mapper = EmotionMapper("animations/manifest.json")
     path = mapper.get_animation_path("happy", theme="dark")
     path = mapper.get_state_path("idle", theme="dark")
 """

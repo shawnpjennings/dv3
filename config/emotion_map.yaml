@@ -2,67 +2,67 @@
 
 emotions:
   happy:
-    directory: data/animations/emotions/happy
+    directory: animations/emotions/happy
     fallback: neutral
   excited:
-    directory: data/animations/emotions/excited
+    directory: animations/emotions/excited
     fallback: happy
   sad:
-    directory: data/animations/emotions/sad
+    directory: animations/emotions/sad
     fallback: calm
   thinking:
-    directory: data/animations/emotions/thinking
+    directory: animations/emotions/thinking
     fallback: neutral
   confused:
-    directory: data/animations/emotions/confused
+    directory: animations/emotions/confused
     fallback: thinking
   laughing:
-    directory: data/animations/emotions/laughing
+    directory: animations/emotions/laughing
     fallback: happy
   surprised:
-    directory: data/animations/emotions/surprised
+    directory: animations/emotions/surprised
     fallback: excited
   calm:
-    directory: data/animations/emotions/calm
+    directory: animations/emotions/calm
     fallback: neutral
   alert:
-    directory: data/animations/emotions/alert
+    directory: animations/emotions/alert
     fallback: excited
   tired:
-    directory: data/animations/emotions/tired
+    directory: animations/emotions/tired
     fallback: calm
   sarcastic:
-    directory: data/animations/emotions/sarcastic
+    directory: animations/emotions/sarcastic
     fallback: neutral
   neutral:
-    directory: data/animations/emotions/neutral
+    directory: animations/emotions/neutral
     fallback: calm
   concerned:
-    directory: data/animations/emotions/concerned
+    directory: animations/emotions/concerned
     fallback: sad
   curious:
-    directory: data/animations/emotions/curious
+    directory: animations/emotions/curious
     fallback: thinking
   proud:
-    directory: data/animations/emotions/proud
+    directory: animations/emotions/proud
     fallback: happy
   angry:
-    directory: data/animations/emotions/angry
+    directory: animations/emotions/angry
     fallback: sarcastic
   roasting:
-    directory: data/animations/emotions/roasting
+    directory: animations/emotions/roasting
     fallback: sarcastic
 
 # Application states — separate from emotions, driven by state machine
 states:
   idle:
-    directory: data/animations/states/idle
+    directory: animations/states/idle
     fallback_emotion: neutral   # use neutral emotion bucket if state dir empty
   listening:
-    directory: data/animations/states/listening
+    directory: animations/states/listening
     fallback_emotion: alert     # use alert emotion bucket if state dir empty
   processing:
-    directory: data/animations/states/processing
+    directory: animations/states/processing
     fallback_emotion: thinking  # use thinking emotion bucket if state dir empty
 
 # Contextual triggers — keywords matched against user speech AND Gemini text
@@ -70,40 +70,40 @@ states:
 contextual_triggers:
   music:
     - patterns: ["pink floyd", "dark side of the moon"]
-      file: data/animations/contextual/music/pink_floyd_prism.webp
+      file: animations/contextual/music/pink_floyd_prism.webp
       duration: 8.0
       priority: 10
     - patterns: ["jazz"]
-      directory: data/animations/contextual/music/jazz
+      directory: animations/contextual/music/jazz
       duration: 10.0
       priority: 8
     - patterns: ["rock", "metal", "heavy metal"]
-      directory: data/animations/contextual/music/rock
+      directory: animations/contextual/music/rock
       duration: 10.0
       priority: 7
     - patterns: ["classical", "orchestra", "symphony"]
-      directory: data/animations/contextual/music/classical
+      directory: animations/contextual/music/classical
       duration: 10.0
       priority: 7
     - patterns: ["hip hop", "rap"]
-      directory: data/animations/contextual/music/hiphop
+      directory: animations/contextual/music/hiphop
       duration: 10.0
       priority: 7
   weather:
     - patterns: ["sunny", "sunshine", "clear sky"]
-      directory: data/animations/contextual/weather/sun
+      directory: animations/contextual/weather/sun
       duration: 8.0
       priority: 7
     - patterns: ["rain", "raining", "rainy"]
-      directory: data/animations/contextual/weather/rain
+      directory: animations/contextual/weather/rain
       duration: 8.0
       priority: 7
     - patterns: ["snow", "snowing", "blizzard"]
-      directory: data/animations/contextual/weather/snow
+      directory: animations/contextual/weather/snow
       duration: 8.0
       priority: 7
     - patterns: ["storm", "thunder", "lightning"]
-      directory: data/animations/contextual/weather/storm
+      directory: animations/contextual/weather/storm
       duration: 8.0
       priority: 8
 

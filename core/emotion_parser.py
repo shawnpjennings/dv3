@@ -290,7 +290,7 @@ class EmotionParser:
         default_entry = self._emotions.get(self._default_emotion, {})
         return default_entry.get(
             "directory",
-            f"data/animations/emotions/{self._default_emotion}",
+            f"animations/emotions/{self._default_emotion}",
         )
 
     def strip_tag(self, text: str) -> str:

@@ -24,6 +24,9 @@ audio:
   output_device: null
   prefer_pulse: true  # prefer PulseAudio backend over ALSA in WSL2
 
+# Visualizer WebSocket server (web visualizer)
+visualizer_ws_port: 8765
+
 # Visualizer
 visualizer:
   fullscreen: true
@@ -42,7 +45,7 @@ emotion:
 
 # Animations
 animations:
-  base_dir: "data/animations"
+  base_dir: "animations"
   contextual_return_delay: 8.0  # seconds before returning to emotion animation
 
 # Spotify (credentials in .env, never here)

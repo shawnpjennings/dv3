@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -35,10 +36,17 @@ COL_PAUSE_INDICATOR = (0xFF, 0xAA, 0x33)
 
 
 def _pil_to_surface(pil_image: Image.Image) -> pygame.Surface:
-    """Convert a PIL RGBA image to a pygame Surface."""
+    """Convert a PIL RGBA image to a pygame Surface.
+
+    Uses SRCALPHA surface creation instead of convert_alpha() so this
+    is safe to call from background threads (convert_alpha requires a
+    display which may not be accessible from non-main threads).
+    """
     rgba = pil_image.convert("RGBA")
-    data = rgba.tobytes()
-    return pygame.image.fromstring(data, rgba.size, "RGBA").convert_alpha()
+    raw = pygame.image.fromstring(rgba.tobytes(), rgba.size, "RGBA")
+    surf = pygame.Surface(rgba.size, pygame.SRCALPHA, 32)
+    surf.blit(raw, (0, 0))
+    return surf
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +100,9 @@ class PreviewPanel:
         self._gradient_surface: Optional[pygame.Surface] = None
         self._gradient_cache_key: Optional[tuple] = None
 
+        # Background loading state
+        self._loading: bool = False
+
         # Font (lazy init)
         self._font: Optional[pygame.font.Font] = None
 
@@ -100,7 +111,12 @@ class PreviewPanel:
     # ------------------------------------------------------------------
 
     def load_animation(self, path: str) -> None:
-        """Load an animated file and prepare frames for display."""
+        """Load an animated file -- first frame instant, rest in background.
+
+        The first frame is decoded immediately so the preview shows something
+        right away.  Remaining frames are decoded in a daemon thread to avoid
+        freezing the UI on large animations.
+        """
         self._path = path
         self._frames.clear()
         self._durations.clear()
@@ -113,37 +129,72 @@ class PreviewPanel:
         self._dragging = False
         self._gradient_surface = None
         self._gradient_cache_key = None
+        self._loading = True  # background load in progress
 
         try:
             img = Image.open(path)
             self._anim_width = img.width
             self._anim_height = img.height
 
-            try:
-                while True:
-                    frame = img.convert("RGBA")
-                    dur = img.info.get("duration", 100)
-                    if dur <= 0:
-                        dur = 100
-                    self._frames.append(_pil_to_surface(frame.copy()))
-                    self._durations.append(int(dur))
-                    img.seek(img.tell() + 1)
-            except EOFError:
-                pass
-
-            if not self._frames:
-                self._frames.append(_pil_to_surface(img.convert("RGBA").copy()))
-                self._durations.append(100)
-
+            # Decode first frame immediately for instant display
+            first = img.convert("RGBA").copy()
+            dur = img.info.get("duration", 100) or 100
+            self._frames.append(_pil_to_surface(first))
+            self._durations.append(int(dur))
             self._compute_display_rect()
+
             logger.info(
-                "Preview loaded %s: %dx%d, %d frames",
-                path, self._anim_width, self._anim_height, len(self._frames),
+                "Preview first frame loaded: %s (%dx%d)",
+                path, self._anim_width, self._anim_height,
             )
+
+            # Decode remaining frames in background thread
+            load_path = path  # capture for closure
+            t = threading.Thread(
+                target=self._bg_load_remaining, args=(load_path,), daemon=True
+            )
+            t.start()
 
         except Exception:
             logger.exception("Failed to load animation: %s", path)
             self._frames.clear()
+            self._loading = False
+
+    def _bg_load_remaining(self, path: str) -> None:
+        """Background thread: decode all frames and replace atomically."""
+        try:
+            img = Image.open(path)
+            frames_pil: list[tuple[Image.Image, int]] = []
+            try:
+                while True:
+                    frame = img.convert("RGBA").copy()
+                    dur = img.info.get("duration", 100) or 100
+                    frames_pil.append((frame, int(dur)))
+                    img.seek(img.tell() + 1)
+            except EOFError:
+                pass
+
+            if not frames_pil:
+                self._loading = False
+                return
+
+            # Convert to pygame surfaces (thread-safe creation)
+            surfaces = [_pil_to_surface(f) for f, _ in frames_pil]
+            durations = [d for _, d in frames_pil]
+
+            # Only replace if we're still viewing the same file
+            if self._path == path:
+                self._frames = surfaces
+                self._durations = durations
+                self._current_frame = 0
+                self._elapsed = 0.0
+                logger.info(
+                    "Preview bg-loaded %s: %d frames", path, len(surfaces)
+                )
+        except Exception:
+            logger.exception("Background preview load failed: %s", path)
+        finally:
+            self._loading = False
 
     def update(self, dt: float) -> None:
         """Advance animation by *dt* seconds."""
@@ -205,9 +256,10 @@ class PreviewPanel:
             self._draw_fill_rect_overlay(surface, s, e)
 
         # Frame counter
-        fc = self._font.render(
-            f"Frame {self._current_frame + 1}/{len(self._frames)}", True, COL_TEXT_DIM
-        )
+        frame_text = f"Frame {self._current_frame + 1}/{len(self._frames)}"
+        if self._loading:
+            frame_text += "  (loading...)"
+        fc = self._font.render(frame_text, True, COL_TEXT_DIM)
         surface.blit(fc, (self.rect.x + 8, self.rect.y + self.rect.height - 22))
 
         # Play/Pause indicator
@@ -518,9 +570,9 @@ class PreviewPanel:
                 gradient_size=self._gradient_size,
             )
             data = pil_grad.tobytes()
-            self._gradient_surface = pygame.image.fromstring(
-                data, pil_grad.size, "RGBA"
-            ).convert_alpha()
+            raw = pygame.image.fromstring(data, pil_grad.size, "RGBA")
+            self._gradient_surface = pygame.Surface(pil_grad.size, pygame.SRCALPHA, 32)
+            self._gradient_surface.blit(raw, (0, 0))
             self._gradient_cache_key = cache_key
 
         surface.blit(self._gradient_surface, self._display_rect.topleft)

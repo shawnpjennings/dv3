@@ -152,12 +152,26 @@ def _find_output_device(sd, prefer_pulse: bool) -> Optional[int]:
 # ---------------------------------------------------------------------------
 
 
+class _EmotionResult:
+    """Result from feeding text to the emotion adapter."""
+
+    __slots__ = ("emotion", "contextual_tag")
+
+    def __init__(
+        self,
+        emotion: Optional[str] = None,
+        contextual_tag: Optional[str] = None,
+    ) -> None:
+        self.emotion = emotion
+        self.contextual_tag = contextual_tag
+
+
 class _InlineEmotionAdapter:
     """Thin wrapper that gives the real EmotionParser a simple feed/reset API.
 
     The ``core.emotion_parser.EmotionParser`` uses an async
     ``process_stream`` interface.  This adapter exposes a simpler
-    synchronous ``feed(text) -> Optional[str]`` / ``reset()`` interface
+    synchronous ``feed(text) -> _EmotionResult`` / ``reset()`` interface
     that the text receive loop can call directly, one chunk at a time.
     """
 
@@ -169,6 +183,7 @@ class _InlineEmotionAdapter:
         self._default: str = emotion_cfg.get("default_emotion", "neutral")
         self._buffer: str = ""
         self._emitted: bool = False
+        self._emitted_tags: set = set()
 
         # Load the real parser for its detection methods.
         try:
@@ -185,55 +200,67 @@ class _InlineEmotionAdapter:
         """Clear the buffer for a new turn."""
         self._buffer = ""
         self._emitted = False
+        self._emitted_tags.clear()
 
-    def feed(self, text: str) -> Optional[str]:
-        """Feed a text chunk and return an emotion if detected.
+    def feed(self, text: str) -> _EmotionResult:
+        """Feed a text chunk and return detected emotion/tag info.
 
         Returns:
-            An emotion string the first time one is detected in this
-            turn, or ``None`` if not yet determined or already emitted.
+            An _EmotionResult with emotion and/or contextual_tag populated
+            when detected, or both None if not yet determined.
         """
-        if self._emitted:
-            return None
-
         self._buffer += text
         tokens = self._buffer.split()
+        result = _EmotionResult()
+
+        # Check for contextual triggers on every chunk (even after emotion emitted)
+        if self._parser is not None:
+            ctx = self._parser.parse_contextual(self._buffer)
+            if ctx is not None:
+                tag_key = ctx.get("category", "unknown")
+                if tag_key not in self._emitted_tags:
+                    self._emitted_tags.add(tag_key)
+                    result.contextual_tag = tag_key
+                    logger.info("Contextual trigger: %s", tag_key)
+
+        if self._emitted:
+            return result
 
         # Only evaluate once we have enough tokens or see a closing bracket
         if len(tokens) < min(self._buffer_tokens, 3) and "]" not in text:
-            return None
+            return result
 
         if self._parser is not None:
             # Use the real parser's detection methods.
             emotion = self._parser.parse_tag(self._buffer.strip())
             if emotion is not None:
                 self._emitted = True
-                return emotion
-
-            # Also check contextual triggers (e.g. "Pink Floyd").
-            ctx = self._parser.parse_contextual(self._buffer)
-            if ctx is not None:
-                logger.info("Contextual trigger: %s", ctx.get("category"))
+                result.emotion = emotion
+                return result
 
             if len(tokens) >= self._buffer_tokens:
                 emotion = self._parser.parse_keywords(self._buffer)
                 if emotion is not None:
                     self._emitted = True
-                    return emotion
+                    result.emotion = emotion
+                    return result
                 self._emitted = True
-                return self._default
+                result.emotion = self._default
+                return result
         else:
             # Inline fallback (no core.emotion_parser available).
             match = _EMOTION_TAG_RE.search(self._buffer.strip())
             if match:
                 self._emitted = True
-                return match.group(1).lower()
+                result.emotion = match.group(1).lower()
+                return result
 
             if len(tokens) >= self._buffer_tokens:
                 self._emitted = True
-                return self._default
+                result.emotion = self._default
+                return result
 
-        return None
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +336,7 @@ class DV3App:
 
         # ---- Emotion mapper (manifest-only) ----
         from visualizer.emotion_map import EmotionMapper
-        manifest_path = PROJECT_ROOT / "data" / "animations" / "manifest.json"
+        manifest_path = PROJECT_ROOT / "animations" / "manifest.json"
         self.emotion_mapper = EmotionMapper(str(manifest_path))
         if self.emotion_mapper.asset_count() == 0:
             logger.warning(
@@ -715,8 +742,8 @@ class DV3App:
 
         Reads text fragments from the pipeline's text iterator, feeds
         them to the emotion parser, and updates the visualizer when
-        an emotion is detected.  Completes when the pipeline signals
-        end of turn.
+        an emotion or contextual trigger is detected.  Completes when
+        the pipeline signals end of turn.
         """
         try:
             async for text in self.pipeline.receive_text():
@@ -724,10 +751,18 @@ class DV3App:
                     break
 
                 if self.emotion_parser is not None:
-                    emotion = self.emotion_parser.feed(text)
-                    if emotion is not None:
-                        logger.info("Emotion detected: %s", emotion)
-                        self._set_emotion(emotion, crossfade=True)
+                    result = self.emotion_parser.feed(text)
+                    if result.emotion is not None:
+                        logger.info("Emotion detected: %s", result.emotion)
+                        self._set_emotion(result.emotion, crossfade=True)
+                    if result.contextual_tag is not None and self.ws_server:
+                        logger.info(
+                            "Emitting contextual tag to visualizer: %s",
+                            result.contextual_tag,
+                        )
+                        asyncio.create_task(
+                            self.ws_server.emit_tag(result.contextual_tag)
+                        )
         except asyncio.CancelledError:
             raise
         except Exception:

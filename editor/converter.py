@@ -416,6 +416,9 @@ class BatchConverter:
     def get_file_info(path: str) -> Optional[dict]:
         """Return metadata about an animation file.
 
+        Uses Pillow's ``n_frames`` attribute instead of seeking through every
+        frame, which avoids a multi-second freeze on large animations.
+
         Returns:
             Dict with keys: name, width, height, frame_count, file_size,
             format, durations.  ``None`` if the file cannot be read.
@@ -424,22 +427,9 @@ class BatchConverter:
             p = Path(path)
             img = Image.open(path)
 
-            frame_count = 0
-            durations: list[int] = []
-            try:
-                while True:
-                    durations.append(img.info.get("duration", 100))
-                    frame_count += 1
-                    img.seek(img.tell() + 1)
-            except EOFError:
-                pass
-
-            if frame_count == 0:
-                frame_count = 1
-                durations = [100]
-
-            # Re-open to get first-frame dimensions reliably
-            img = Image.open(path)
+            # Fast frame count -- avoids iterating all frames
+            frame_count = getattr(img, "n_frames", 1)
+            first_dur = img.info.get("duration", 100) or 100
 
             return {
                 "name": p.name,
@@ -448,7 +438,7 @@ class BatchConverter:
                 "frame_count": frame_count,
                 "file_size": p.stat().st_size,
                 "format": img.format or p.suffix.lstrip(".").upper(),
-                "durations": durations,
+                "durations": [first_dur],
             }
         except Exception:
             logger.exception("Failed to read info for %s", path)

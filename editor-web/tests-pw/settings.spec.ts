@@ -18,7 +18,7 @@ test('settings modal opens and shows folder picker section', async ({ page }) =>
   expect(await notSetText.isVisible()).toBeTruthy();
   console.log('Not set text: ✓');
 
-  const selectBtn = page.getByText('Select data/animations Folder');
+  const selectBtn = page.getByText('Select animations Folder');
   expect(await selectBtn.isVisible()).toBeTruthy();
   console.log('Select folder button: ✓');
 

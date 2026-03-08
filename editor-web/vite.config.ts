@@ -13,9 +13,9 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
     allowedHosts: true,
-    // Serve DV3's animation data directory at /data/animations
+    // Serve DV3's animation directory
     fs: {
-      allow: ['.', path.resolve(__dirname, '../data/animations')],
+      allow: ['.', path.resolve(__dirname, '../animations')],
     },
   },
 });

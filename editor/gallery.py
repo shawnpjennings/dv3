@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -121,6 +122,10 @@ class _Thumbnail:
 # Background loader
 # ---------------------------------------------------------------------------
 
+# Shared thread pool — limits concurrent decoding to avoid thrashing CPU/memory
+_loader_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="thumb-loader")
+
+
 def _load_all_frames(thumb: _Thumbnail) -> None:
     """Decode every frame of *thumb.path* in a background thread.
 
@@ -190,7 +195,9 @@ class Gallery:
         self._scroll_offset: int = 0  # pixels scrolled down
 
         self._font: Optional[pygame.font.Font] = None
-        self._cols: int = 1
+        # Compute _cols from rect width immediately so clicks work before first render
+        inner_w = rect.width - THUMB_PAD * 2
+        self._cols: int = max(1, inner_w // CELL_WIDTH)
 
         self.load_directory(directory)
 
@@ -238,23 +245,31 @@ class Gallery:
 
             self._thumbs.append(thumb)
 
-            # Kick off background decode for the remaining frames
+            # Kick off background decode for remaining frames (via shared pool)
             thumb.loading = True
-            t = threading.Thread(
-                target=_load_all_frames, args=(thumb,), daemon=True
-            )
-            t.start()
+            _loader_pool.submit(_load_all_frames, thumb)
 
         logger.info("Gallery loaded %d files from %s", len(self._thumbs), path)
 
     def update(self, dt: float) -> None:
-        """Advance ALL thumbnail animations simultaneously.
+        """Advance visible thumbnail animations.
+
+        Only animates thumbnails that are on-screen to reduce CPU load
+        when the gallery has hundreds of files.
 
         Args:
             dt: Delta time in seconds since last call.
         """
         dt_ms = dt * 1000.0
-        for thumb in self._thumbs:
+        if not self._thumbs:
+            return
+        # Only animate thumbnails in the visible range
+        cols = max(1, self._cols)
+        first_visible_row = max(0, self._scroll_offset // CELL_HEIGHT - 1)
+        visible_rows = self.rect.height // CELL_HEIGHT + 3  # +buffer
+        first_idx = first_visible_row * cols
+        last_idx = min(len(self._thumbs), (first_visible_row + visible_rows) * cols)
+        for thumb in self._thumbs[first_idx:last_idx]:
             thumb.advance(dt_ms)
 
     def render(self, surface: pygame.Surface) -> None:

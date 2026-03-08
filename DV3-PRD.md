@@ -2,14 +2,14 @@
 
 **Project**: DV3 (Voice Companion with Emotional Visualizer)
 **Platform**: Ubuntu/WSL2 on Windows NUC
-**Status**: Active Development — browser editor shipped, voice pipeline operational
+**Status**: Active Development — voice pipeline operational, web editor shipped, animation library migration in progress
 **Build approach**: Claude Code multi-agent / sub-agent execution
 
 ---
 
 ## Goal
 
-A voice-activated home companion that listens for a wake word, conducts natural conversation via the Gemini Live API, and drives a fullscreen ambient visualizer that responds to emotional context extracted from the conversation. The visualizer plays animated WebP files organized by emotion bucket, with a black radial gradient mask that makes animations appear to float in space rather than sit in a box.
+A voice-activated home companion that listens for a wake word, conducts natural conversation via the Gemini Live API, and drives a fullscreen ambient visualizer that responds to emotional context extracted from the conversation. The visualizer plays animated WebP files selected by emotion tag, with a black radial gradient mask that makes animations appear to float in space rather than sit in a box.
 
 ---
 
@@ -24,7 +24,7 @@ Single user, home environment. The system runs persistently and is used for natu
 Two separate applications:
 
 1. **DV3 Voice Companion** — the always-on agent (this document's primary focus)
-2. **WebPew Animation Editor** — browser-based tool for preparing, adjusting, and tagging animation files (`editor-web/`). Replaced the legacy Pygame editor.
+2. **DV3 Editor** — browser-based tool for preparing, adjusting, and tagging animation files (`editor-web/`). Replaced the legacy Pygame editor.
 
 Both live at `~/projects/dv3/` in WSL2.
 
@@ -42,21 +42,21 @@ Both live at `~/projects/dv3/` in WSL2.
 [Gemini Live API] — single persistent WebSocket session
     |-- Built-in VAD (no Silero needed)
     |-- Built-in STT
-    |-- LLM reasoning (gemini-2.5-flash-native-audio-preview)
+    |-- LLM reasoning (gemini-2.5-flash-native-audio-latest)
     |-- Native TTS audio output
     |
 [Audio output] — speakers
 [Text output]  — parsed for emotion tags → visualizer event
 ```
 
-### Abstraction Layer (Required from day one)
+### Abstraction Layer
 
-The voice pipeline must be implemented behind an abstract interface so the backend can be swapped without touching the visualizer, tools, or config.
+The voice pipeline is implemented behind an abstract interface so the backend can be swapped without touching the visualizer, tools, or config.
 
 ```
 core/voice_pipeline/
     base.py          # Abstract interface — emit_emotion(), emit_tool_request(), etc.
-    gemini_live.py   # Gemini Live API implementation (build this first)
+    gemini_live.py   # Gemini Live API implementation (active)
     modular.py       # Stub — future: OpenWakeWord + Whisper + ElevenLabs
 ```
 
@@ -65,6 +65,10 @@ The visualizer and all tools import from `base.py` only. Nothing imports from `g
 ### IPC: Voice Loop to Visualizer
 
 Both systems run in the same Python process using asyncio. The voice loop puts emotion events on an `asyncio.Queue`. The visualizer coroutine reads from that queue and triggers animation transitions. No sockets, no separate processes needed for v1.
+
+### WebSocket Server
+
+An aiohttp WebSocket server (`core/visualizer_ws.py`) runs on port 8765 and broadcasts emotion/state/tag events to optional web visualizer clients (`visualizer-web/`).
 
 ### Project Structure
 
@@ -77,50 +81,55 @@ Both systems run in the same Python process using asyncio. The voice loop puts e
 │   │   ├── gemini_live.py
 │   │   └── modular.py          # stub
 │   ├── wake_word.py            # OpenWakeWord gate
-│   └── emotion_parser.py       # tag extraction + keyword fallback
+│   ├── emotion_parser.py       # tag extraction + keyword fallback + contextual
+│   └── visualizer_ws.py        # WebSocket server for web visualizer clients
 ├── tools/
+│   ├── tool_dispatcher.py
 │   ├── spotify_tool.py
 │   ├── timer_tool.py
 │   └── system_tools.py         # time, date
 ├── visualizer/
 │   ├── display.py              # Pygame window manager
-│   ├── animation_engine.py     # WebP/GIF playback
+│   ├── animation_engine.py     # WebP/GIF playback, crossfade, frame cache
 │   ├── gradient_overlay.py     # radial edge fade
-│   └── emotion_map.py          # emotion string → animation bucket path
+│   └── emotion_map.py          # manifest-based animation resolver
 ├── editor/                     # LEGACY — headless batch conversion only
 │   └── converter.py            # GIF → WebP batch conversion (CLI use only)
-├── editor-web/                 # PRIMARY animation editor (WebPew)
+├── editor-web/                 # PRIMARY animation editor (DV3 Editor)
 │   ├── src/
-│   │   ├── App.tsx             # root app, state management
-│   │   ├── types.ts            # Asset, ActionType, AssetTheme
+│   │   ├── App.tsx             # root app, state management, inbox/library tabs
+│   │   ├── types.ts            # InboxItem, LibraryAsset, Manifest, EditAction, SavePayload
 │   │   ├── components/
-│   │   │   ├── GalleryPanel.tsx
-│   │   │   ├── EditorPanel.tsx
-│   │   │   ├── TopToolbar.tsx
-│   │   │   └── SettingsModal.tsx
+│   │   │   ├── GalleryPanel.tsx      # asset grid, thumbnails, selection
+│   │   │   ├── EditorPanel.tsx       # edit controls (brightness, flip, crop, speed, etc.)
+│   │   │   ├── TagPanel.tsx          # metadata: emotions, states, custom tags, theme, title, notes
+│   │   │   ├── InboxPanel.tsx        # import untagged assets via File System Access API
+│   │   │   ├── LibraryPanel.tsx      # browse and re-edit tagged/baked assets
+│   │   │   ├── TopToolbar.tsx        # global header, folder status, settings
+│   │   │   ├── SidebarPanel.tsx      # inbox/library tab switcher
+│   │   │   ├── SettingsModal.tsx     # app preferences, export root folder
+│   │   │   ├── ErrorBoundary.tsx     # error handling wrapper
+│   │   │   ├── VariantComparison.tsx # side-by-side compare mode
+│   │   │   └── CircleCheck.tsx       # shared checkbox component
 │   │   └── lib/
-│   │       ├── db.ts           # IndexedDB persistence
-│   │       └── exportUtils.ts  # FFmpeg WASM export + manifest generation
+│   │       ├── bakeUtils.ts          # FFmpeg WASM integration, render pipeline
+│   │       ├── exportUtils.ts        # ZIP export, manifest generation
+│   │       ├── db.ts                 # IndexedDB CRUD
+│   │       ├── inboxUtils.ts         # file copy/convert to inbox
+│   │       ├── thumbStyles.ts        # thumbnail preview styling
+│   │       └── validation.ts         # file type validation
 │   └── package.json
+├── visualizer-web/             # Optional web visualizer (early stage)
 ├── data/
 │   └── animations/
-│       ├── manifest.json       # generated by WebPew on export — asset index
-│       ├── emotions/           # per-emotion subdirs (runtime fallback)
-│       │   ├── happy/
-│       │   ├── excited/
-│       │   ├── neutral/        # default/idle resting state
-│       │   └── [17 emotions total — see emotion_map.yaml]
-│       ├── contextual/         # keyword-triggered animations
-│       │   ├── music/
-│       │   ├── weather/
-│       │   └── special/
-│       ├── states/             # state-machine driven (idle/listening/processing)
-│       └── inbox/              # raw unsorted uploads (legacy — workflow moved to editor)
-├── wakeword/
-│   └── [.onnx and .tflite model files — configured via settings.yaml, never hardcoded]
+│       ├── manifest.json       # generated by editor on save — asset index (single source of truth)
+│       ├── inbox/              # raw imported files, awaiting tagging
+│       └── library/            # baked animations (flat dir), ready for runtime use
+├── wakeword/                   # model files — configured via settings.yaml, never hardcoded
 ├── config/
 │   ├── settings.yaml
 │   └── emotion_map.yaml
+├── tests/
 └── requirements.txt
 ```
 
@@ -130,74 +139,82 @@ Both systems run in the same Python process using asyncio. The voice loop puts e
 
 ### Must-Have (v1)
 
-**Voice Pipeline**
+**Voice Pipeline** 
 
 1. OpenWakeWord gate using a configurable model file (path set in `settings.yaml`). Wake word detection triggers the Gemini Live session to begin receiving audio.
-2. Gemini Live API (`gemini-2.5-flash-native-audio-preview`) handles VAD, STT, LLM, and TTS in a single persistent WebSocket session using the native `google-genai` Python SDK.
+2. Gemini Live API (`gemini-2.5-flash-native-audio-latest`) handles VAD, STT, LLM, and TTS in a single persistent WebSocket session using the native `google-genai` Python SDK.
 3. Audio input: PCM 16kHz mono 16-bit captured from default mic device (configurable).
 4. Audio output: stream Gemini's audio response to speakers with minimal buffering.
 5. Session reconnection: if the WebSocket drops, automatically attempt reconnect with exponential backoff (max 5 retries). Log the failure. Resume from neutral state.
-6. API key fallback: primary and secondary Google API keys configurable in settings. On 429 rate limit, automatically switch to fallback key and reconnect.
-7. WSL2 audio: check how existing Thumper project handles PyAudio in WSL2 and replicate that approach. Path: `~/projects/thumper/`.
+6. API key fallback: primary and secondary Google API keys configurable in `.env`. On 429 rate limit, automatically switch to fallback key and reconnect.
+7. WSL2 audio: use `sounddevice` (not PyAudio) with PulseAudio bridge. Matches approach in `~/projects/thumper/`.
 
-**Emotion System**
+**Emotion System** 
 
 8. Gemini is instructed via system prompt to begin every text response with a bracketed emotion tag: `[emotion]`. Example: `[curious] That's an interesting question...`
 9. Emotion parser buffers the first 30 tokens of the text stream. Extracts tag using regex `\[(\w+)\]`. Fires visualizer event immediately on detection. Strips tag from any displayed text.
-10. If no tag detected in first 30 tokens, run keyword fallback analysis on the text stream (exclamation marks → excited, "hmm"/"interesting" → thinking, "sorry"/"unfortunately" → concerned, etc.).
+10. If no tag detected in first 30 tokens, run keyword fallback analysis on the text stream.
 11. If neither method detects an emotion, default to `[neutral]`.
-12. Contextual keyword detection runs on the user's transcribed speech in real time, not just on Gemini's response. This allows contextual animations to trigger the moment the user makes a request. Example: user says "play Dark Side of the Moon by Pink Floyd" → Pink Floyd animation fires immediately, before Gemini's reply arrives. Gemini's text response is still parsed for emotion tags in parallel.
-13. Contextual keyword triggers override emotion triggers. If either the user's speech or Gemini's text stream contains specific keywords (music genre names, weather terms, etc.) a contextual animation is played instead. Priority: contextual > emotion > neutral.
+12. Contextual keyword detection runs on the user's transcribed speech in real time. Fires the contextual animation immediately, before Gemini's reply arrives. Gemini's text response is still parsed for emotion tags in parallel.
+13. Contextual keyword triggers override emotion triggers. Priority: contextual > emotion > neutral.
 
-**Visualizer**
+**Visualizer** 
 
-13. Fullscreen Pygame window on the primary display. Black background.
-14. Resolution-agnostic: query display resolution at startup. Animation area sized as a percentage of screen dimensions (default: 45% of screen height, maintaining animation's native aspect ratio, centered).
-15. Animation area size and position are configurable at runtime (via admin controls or config).
-16. Animated WebP files are the primary format. GIF playback also supported natively (for files not yet converted).
-17. Radial black gradient mask applied over the animation area, fading edges to black. Opacity adjustable 0-100%. Size (how far the gradient extends inward) adjustable as percentage of animation area. Both adjustable at runtime.
-18. Crossfade transition between animations: configurable duration (default 300ms), alpha blend.
-19. Animation selected randomly from the matching emotion bucket directory.
-20. Animations loop seamlessly.
-21. Target 60fps playback. Pre-cache next 30 frames during playback.
-22. Contextual animations: specific keyword matches (e.g., Pink Floyd → specific file, "jazz" → random from jazz folder) play for a configured duration then return to emotion-based animation.
+14. Fullscreen Pygame window on the primary display. Black background.
+15. Resolution-agnostic: query display resolution at startup. Animation area sized as a percentage of screen dimensions (default: 65% of screen height), centered, aspect ratio preserved.
+16. Animation area size and position configurable via `settings.yaml`.
+17. Animated WebP files are the primary format. GIF playback also supported natively.
+18. Radial black gradient mask applied over the animation area, fading edges to black. Opacity and size adjustable in `settings.yaml`.
+19. Crossfade transition between animations: configurable duration (default 300ms), alpha blend.
+20. Animation selected randomly from the matching tagged asset set (via `manifest.json`).
+21. Animations loop seamlessly.
+22. Target 60fps playback. Pre-cache next 30 frames during playback.
+23. Contextual animations: play for configured duration then return to emotion-based animation.
 
-**Tools (v1)**
+**Tools (v1)** 
 
-23. **Spotify**: play, pause, skip, previous, volume, search by track/artist/album, get now playing. Use `spotipy` library with OAuth. Credentials in `.env`, never in code or config files committed to git.
-24. **Web search**: use Gemini Live API's built-in Google Search grounding tool (`google_search` in setup config). No external search API needed.
-25. **Timer**: set a timer by duration (e.g., "set a 10 minute timer"). On completion, play an audio alert and announce via TTS. Multiple concurrent timers supported.
-26. **Time/date**: return current time and date. Native Python, no API.
+24. **Spotify**: play, pause, skip, previous, volume, search by track/artist/album, get now playing. Via `spotipy` library with OAuth. Credentials in `.env`.
+25. **Web search**: Gemini Live API's built-in Google Search grounding (`google_search` in setup config). No external search API needed.
+26. **Timer**: set a timer by duration. On completion, play an audio alert and announce via TTS. Multiple concurrent timers supported.
+27. **Time/date**: return current time and date. Native Python, no API.
 
-**Gemini Tool Calling**
+**Gemini Tool Calling** 
 
-27. Tools declared as `function_declarations` in the Live API setup config. When Gemini emits a `tool_call` message mid-stream, the code executes the function and returns a `tool_response` message. Gemini resumes audio output after receiving the result.
-28. Tool execution is async and non-blocking. Audio stream continues (or pauses gracefully) while the tool executes.
+28. Tools declared as `function_declarations` in the Live API setup config. Tool calls executed and responses returned while audio stream continues.
+29. Tool execution is async and non-blocking.
 
-**WebPew Animation Editor (browser-based — PRIMARY)**
+**DV3 Editor (browser-based — PRIMARY)** 
 
-29. React + TypeScript + Vite app at `editor-web/`. Runs at `http://localhost:5173`.
-30. All asset data persisted in browser IndexedDB (`DV3EditorDB`). No server required.
-31. Upload GIF, WebP, PNG, JPG — all types accepted. GIFs shown with amber badge to indicate they need export as WebP.
-32. Non-destructive edit stack: adjustments stored per-asset, original file never modified. Export = FFmpeg WASM render with all edits applied.
-33. Edit tools: Flip H/V, Size/Zoom, Position X/Y (move within canvas), Outfill background color, Crop to square, Circle mask, Brightness, Contrast, Hue, Saturation, Grayscale, Invert, Vignette, Background swap (beta), Speed multiplier (0.1x–4x), Reverse frames.
-34. Multi-selection with Shift+click (range) and Ctrl+click (toggle). Batch export and batch rename.
-35. Each asset tagged with: `emotion` (primary), `additionalEmotions[]` (secondary), `context`, `theme` (dark/light/both). Tags drive DV3 animation routing.
-36. Export produces a ZIP containing rendered WebP(s) + `manifest.json` with full tag metadata.
-37. `manifest.json` is read by `EmotionMapper` at runtime to enable multi-emotion tag queries and theme filtering — supplements (does not replace) the folder-based system.
-38. MVP theme: dark (black background animations). Light theme planned for v1.5 — Asset type already supports `theme: 'dark' | 'light' | 'both'`.
+30. React + TypeScript + Vite app at `editor-web/`. Runs at `http://localhost:5173`.
+31. All asset data persisted in browser IndexedDB (`DV3EditorDB`). No server required.
+32. Upload GIF, WebP, PNG, JPG via File System Access API. Files copied to `data/animations/inbox/`.
+33. Non-destructive edit stack: adjustments stored per-asset, original file never modified. Save = FFmpeg WASM render with all edits applied.
+34. Edit tools: Flip H/V, Size/Zoom, Position X/Y, Outfill background color, Crop to square, Circle mask, Brightness, Contrast, Hue, Saturation, Grayscale, Invert, Vignette, Background swap (beta), Speed multiplier (0.1x–4x), Reverse frames.
+35. Multi-selection with Shift+click (range) and Ctrl+click (toggle). Batch export and batch rename.
+36. Each asset tagged with: emotions (primary + additional), states, custom tags, theme (dark/light/both), title, notes. Tags drive DV3 animation routing.
+37. Save bakes edits via FFmpeg WASM, writes final WebP to `animations/library/`, and updates `manifest.json`.
+38. Library tab allows browsing saved assets, re-editing, duplicating, or removing.
+39. Export produces a ZIP containing all library WebPs + `manifest.json` for backup or transfer.
+40. Undo/redo history with labeled Undo/Redo text buttons.
+41. Visualizer Preview mode shows how animation will look with the DV3 gradient mask.
+42. Compare mode for side-by-side before/after.
 
-**Emotion/Context/State model (clarified)**
+**Animation Asset Model** 
+
+43. `manifest.json` is the single source of truth for the animation library. Flat structure — all baked assets live in `animations/library/`, indexed by manifest.
+44. `EmotionMapper` loads `manifest.json` at startup. Queries by emotion, state, or custom tag. Fallback chains defined in `emotion_map.yaml`.
+45. Old folder-based structure (`emotions/`, `contextual/`, `states/`) is deprecated. Migration to inbox→library workflow is the current active work item.
+
+**Emotion/Context/State model**
 
 - **Emotion**: how DV3 feels/expresses (`neutral`, `happy`, `excited`, etc.)
-- **Context**: what the agent is doing (`idle`, `listening`, `processing`)
-- **State**: maps to context, driven by voice pipeline state machine
-- Default resting state: `neutral` emotion + `idle` context. These are separate axes, not interchangeable.
+- **Context/State**: what the agent is doing (`idle`, `listening`, `processing`)
+- Default resting state: `neutral` emotion + `idle` state. These are separate axes.
 
-**Configuration**
+**Configuration** 
 
-39. All user-specific values (API keys, voice model paths, wake word model paths, device preferences) live in `.env` or `settings.yaml`. Nothing sensitive or user-specific is hardcoded in source files, README, or documentation.
-40. `settings.yaml` includes: wake word model path, primary/fallback API keys, audio device indices, animation directory path, gradient defaults, animation area size defaults, Spotify credentials path.
+46. All runtime values in `settings.yaml`. Sensitive values (API keys, credentials) in `.env` only. Nothing sensitive is hardcoded.
+47. `emotion_map.yaml` defines all emotion/state/contextual trigger mappings, fallback chains, and keyword lists.
 
 ---
 
@@ -206,19 +223,20 @@ Both systems run in the same Python process using asyncio. The voice loop puts e
 - TAPO smart bulb control via `python-tapo` (local LAN, no Home Assistant required)
 - Govee light control via Govee cloud API
 - TV control via ADB
-- OpenMemory integration for persistent cross-session memory (once configured at `~/OpenMemory`)
+- OpenMemory integration for persistent cross-session memory
 - Multiple animation layers (background + foreground)
 - Admin web panel for runtime config adjustments
+- Light theme variant (dark/light/both asset tagging already supported — add light-themed animations)
 
 ---
 
 ## Technical Constraints
 
-- **Gemini Live API requires native SDK**: `google-genai` Python SDK with async WebSocket. Not accessible via the OpenAI-compatible Gemini endpoint. All voice pipeline code must use `google.genai` types.
-- **Gemini tool calling differs from OpenAI**: tools are declared in setup config, not per-request. Tool calls come as mid-stream WebSocket messages, not in a final response object.
-- **WebP is preferred over GIF**: better compression, smoother playback in Pygame. All GIFs in the animation library should be converted via the editor before deployment. The visualizer supports GIF as fallback only.
-- **WSL2 audio**: PyAudio in WSL2 requires PulseAudio or PipeWire bridging. Check and replicate the approach used in `~/projects/thumper/` before implementing from scratch.
-- **No hardcoded personal data**: wake word names, voice IDs, device names, account details must never appear in source files, README, or documentation. Reference via config keys only.
+- **Gemini Live API requires native SDK**: `google-genai` Python SDK with async WebSocket. Not accessible via the OpenAI-compatible Gemini endpoint.
+- **Gemini tool calling differs from OpenAI**: tools declared in setup config, not per-request. Tool calls come as mid-stream WebSocket messages.
+- **WebP is preferred over GIF**: better compression, smoother playback. All GIFs should be converted via the editor before deployment. GIF is supported as fallback only.
+- **WSL2 audio**: use `sounddevice` (not PyAudio) with PulseAudio bridge. See `core/wake_word.py` for implementation.
+- **No hardcoded personal data**: wake word names, voice IDs, device names, account details must never appear in source files, README, or documentation.
 - **Single process, async**: voice loop and visualizer run as coroutines in the same asyncio event loop. Communication via `asyncio.Queue`.
 
 ---
@@ -226,10 +244,10 @@ Both systems run in the same Python process using asyncio. The voice loop puts e
 ## Emotion Tag System Prompt (Required in Gemini system instruction)
 
 ```
-Before every response, begin with a single emotion tag in brackets that describes 
+Before every response, begin with a single emotion tag in brackets that describes
 your current tone. Choose from this list only:
-[excited] [happy] [sad] [thinking] [confused] [laughing] [surprised] [calm] 
-[alert] [tired] [sarcastic] [neutral] [curious] [proud] [concerned]
+[excited] [happy] [sad] [thinking] [confused] [laughing] [surprised] [calm]
+[alert] [tired] [sarcastic] [neutral] [curious] [proud] [concerned] [angry] [roast]
 
 The tag must be the very first thing in your text response, before any other content.
 Example: [curious] That's an interesting question...
@@ -237,36 +255,15 @@ Example: [curious] That's an interesting question...
 
 ---
 
-## Emotion to Animation Bucket Mapping
+## Emotion to Animation Mapping
 
-Defined in `config/emotion_map.yaml`. Structure:
+Defined in `config/emotion_map.yaml`. Runtime resolution:
 
-```yaml
-emotions:
-  happy:
-    directory: data/animations/emotions/happy
-    fallback: neutral
-  excited:
-    directory: data/animations/emotions/excited
-    fallback: happy
-  # ... all 15 emotions
+1. `EmotionMapper.query(emotion)` → scans `manifest.json` for assets tagged with that emotion
+2. If no match, follows fallback chain from `emotion_map.yaml` (e.g., `excited → happy → neutral`)
+3. Returns a random asset from the matching set
 
-contextual_triggers:
-  music:
-    - patterns: [pink floyd, dark side of the moon]
-      file: data/animations/contextual/music/pink_floyd_prism.webp
-      duration: 8.0
-      priority: 10
-    - patterns: [jazz]
-      directory: data/animations/contextual/music/jazz
-      duration: 10.0
-      priority: 8
-  weather:
-    - patterns: [sunny, sunshine]
-      directory: data/animations/contextual/weather/sun
-      priority: 7
-  # ... etc
-```
+Contextual triggers also defined in `emotion_map.yaml` — pattern lists, durations, and priorities.
 
 ---
 
@@ -287,26 +284,44 @@ contextual_triggers:
          [gradient size: % of animation area, adjustable]
 ```
 
-The animation content should appear to float in black space, not sit in a visible box. The gradient must be strong enough at the edges to eliminate any visible hard boundary from the animation file itself. If an animation has content too close to its edges, the editor's outfill (padding) tool should be used to create space for the gradient to work.
+The animation content should appear to float in black space. The gradient must be strong enough at the edges to eliminate any visible hard boundary. If an animation has content too close to its edges, use the editor's outfill tool to create space for the gradient.
 
 ---
 
 ## Acceptance Criteria
 
+**Voice Pipeline**
 - [ ] Wake word detection triggers Gemini Live session within 500ms
 - [ ] Gemini Live session produces first audio within 1500ms of wake word on local network
+- [ ] On WebSocket drop, system reconnects automatically and resumes within 10 seconds
+- [ ] On primary API key 429, system switches to fallback key and continues without user action
+- [ ] VAD Interrupt tested and working with Shawn Paul
+- [ ] Wake word detection tested and working with Shawn Paul
+
+**Visualizer**
 - [ ] Emotion tag detected and visualizer animation triggered before or as audio begins playing
 - [ ] Animation crossfade completes without visible stutter at 60fps
 - [ ] Gradient mask eliminates visible hard edges on all prepared animation files
+- [ ] Ctrl + shift + v opens visualizer settings panel
+- [ ] Gradient opacity: 0-100%, adjustable in Visualizer settings panel
+- [ ] Gradient size: % of animation area, adjustable in Visualizer settings panel
+- [ ] Animation crossfade, adjustable in Visualizer settings panel
+
+**Tools**
 - [ ] Spotify play command executes and music starts within 2 seconds of tool call
 - [ ] Timer fires audio alert at correct time
-- [ ] On WebSocket drop, system reconnects automatically and resumes within 10 seconds
-- [ ] On primary API key 429, system switches to fallback key and continues without user action
+- [ ] Triggers animations with default music controls, and artist name, song title
+- [ ] Spotify tool calls and animation triggers tested in preview or playwright
+
+
+**Editor**
+- [ ] Upload GIF/WebP, apply edits, save renders correct WebP via FFmpeg WASM
+- [ ] Baked WebP and manifest entry appear in `data/animations/library/` after save
+- [ ] Re-editing a library item loads the baked file with pre-populated tags
+- [ ] Manifest.json contains correct emotion/state/tag/theme metadata
+
+**Security**
 - [ ] No personal names, account IDs, device names, or sensitive values appear in any source file or documentation
-- [ ] WebPew editor: upload GIF/WebP, apply edits, export renders correct WebP via FFmpeg WASM
-- [ ] WebPew editor: Outfill and Position tools bake correctly into exported WebP
-- [ ] WebPew editor: manifest.json included in export ZIP with correct emotion/context/theme tags
-- [ ] EmotionMapper: `load_manifest()` reads manifest.json and makes tagged assets available for runtime selection
 
 ---
 
@@ -315,40 +330,41 @@ The animation content should appear to float in black space, not sit in a visibl
 Claude Code agents must verify completion using functional tests, not just code review:
 
 - **Audio pipeline**: run a test script that opens the mic, detects a spoken test phrase via wake word, sends to Gemini Live, and prints the text response to console. Confirm with output log.
-- **Emotion parsing**: unit test with mock text streams containing tags, missing tags, and edge cases. All cases must pass before integration.
-- **Visualizer**: launch the visualizer window, programmatically emit a sequence of emotion events, and use a screenshot or frame capture to confirm animations are changing. Do not mark visualizer complete based on code review alone.
-- **Spotify tool**: execute a test play command and confirm via Spotify API `currently_playing` endpoint that the correct track is playing.
-- **WebPew editor**: start `npm run dev` in `editor-web/`, navigate to localhost:5173 via Playwright, upload a test GIF, apply at least one edit, export, confirm ZIP contains valid WebP + manifest.json with correct tags.
-- **WSL2 audio**: confirm PyAudio can open mic and speakers before any other audio work proceeds. If it cannot, resolve the PulseAudio/PipeWire bridge before continuing.
+- **Emotion parsing**: `pytest tests/test_emotion_parser.py -v` — all cases pass.
+- **Visualizer**: launch the visualizer window, programmatically emit a sequence of emotion events, confirm animations are changing. Do not mark visualizer complete based on code review alone.
+- **Spotify tool**: execute a test play command and confirm via Spotify API `currently_playing` endpoint.
+- **DV3 Editor**: `npm run dev` in `editor-web/`, navigate to localhost:5173 via Playwright, import a test file, apply edits, save, confirm WebP + manifest.json are written correctly.
+- **WSL2 audio**: confirm `sounddevice` can open mic and speakers before any other audio work proceeds.
 
 ---
 
-## Existing Assets
+## Current Work Queue
 
-Animation files (mixed WebP and GIF, unsorted) are located at:
-`~/projects/dv3/data/animations/inbox/`
+From BEADS (`bd ready`):
 
-These need to be uploaded into WebPew (`editor-web/`), tagged with emotion/context/theme, and exported as WebP. The browser editor is the tool for this — do not sort files manually into folders.
+| ID | Priority | Type | Title |
+|----|----------|------|-------|
+| dv-n9a | P1 | bug | Fix remove action |
+| dv-1tv | P2 | task | Update tags/triggers in emotion_map.yaml |
+| dv-4vw | P2 | feature | Event tags |
+| dv-m48 | P2 | feature | Add Paint Feature |
+| dv-xst | P2 | bug | Error trying to save image |
+| dv-3lb | P2 | bug | Error trying to save image (duplicate) |
+| dv-5ew | P2 | task | Improve UX |
+| dv-67b | P2 | feature | Add Delete to inbox and library galleries |
+| dv-p12 | P2 | bug | Popout notifications should say DV3 EDITOR |
 
-Wake word model files (.onnx and .tflite) are located at:
-`~/projects/thumper/wakeword/`
-
-Reference these via `settings.yaml` path config. Do not copy or rename them — use the existing files.
+**Next major milestone**: Animation library migration — run `scripts/migrate_to_inbox.py` to import old assets into the inbox, re-tag via DV3 Editor, and clean up the old folder structure.
 
 ---
 
 ## Setup and Infrastructure
 
-**GitHub**
-Repository: `shawnpjennings/dv3` — not yet synced at time of writing. Claude Code should initialize git, set the remote, and push initial structure.
+**GitHub**: `shawnpjennings/dv3`
 
-**BEADS**
-BEADS (`bd`) is already installed. Run `bd init` in the project root before starting any build work. Claude Code should use `bd` for all task tracking, dependency management, and progress throughout the build. This gives agents persistent structured memory across the entire build. Reference: https://github.com/steveyegge/beads
+**BEADS**: `bd` is installed. Run `bd ready` to see available work. All task tracking is done via BEADS — do not create markdown TODO lists.
 
-**Folder Structure**
-Claude Code creates the full folder structure from scratch based on the structure defined in this PRD. Do not assume any folders exist beyond what is already present in `~/projects/dv3/`.
-
-**.gitignore — Required entries (add before first push)**
+**.gitignore entries (required):**
 ```
 .env
 temp_images/
@@ -359,27 +375,19 @@ venv/
 .pytest_cache/
 *.onnx
 *.tflite
+node_modules/
+editor-web/dist/
 ```
 
-**Temp folder (`~/projects/dv3/temp/`)**
-Contains test assets for development and verification — do not commit. Contents:
-- Audio samples for testing wake word detection, VAD, and STT
-- Sample WebP and GIF image files for visualizer testing
-- OpenWakeWord model files (.onnx and .tflite)
+**Wake word models**: `.onnx` files are in `temp/wakeword/`. Path configured in `settings.yaml`. Not committed to git.
 
-Claude Code should use these assets for the verification steps outlined in the Acceptance Criteria section rather than requiring live mic/speaker testing for every run.
-
-**.env**
-A `.env` file already exists in the project root containing the two Gemini API keys (primary and fallback). This file must never be committed. Confirm `.env` is in `.gitignore` before any `git push`.
-
-**Verification and Testing**
-All features must be verified with Playwright or equivalent functional testing before being marked complete. Code review alone is not sufficient. See the Acceptance Criteria section for specific verification requirements per feature. No task is done until it is tested and confirmed working.
+**.env**: Contains Gemini API keys (primary + fallback) and Spotify credentials. Never commit.
 
 ---
 
-## Open Questions (Decide before or during build)
+## Open Questions
 
-1. Does the Gemini Live API voice quality satisfy the use case, or is a TTS swap needed? Evaluate during first working prototype.
-2. Should the visualizer support multiple simultaneous animation layers (e.g., background ambient loop + foreground emotion burst)? Defer to v1.5 unless trivial to add.
-3. GIF-to-WebP conversion: does it preserve animation quality acceptably for all source files? Verify with the batch converter before committing to WebP-only.
-4. Should the visualizer support multiple simultaneous animation layers (e.g., background ambient loop + foreground emotion burst)? Defer to v1.5 unless trivial to add.
+1. Does the Gemini Live API voice quality satisfy the use case, or is a TTS swap needed? — *Deferred: evaluate with first full end-to-end test on hardware.*
+2. Should the visualizer support multiple simultaneous animation layers? — *Deferred to v1.5.*
+3. GIF-to-WebP conversion quality: acceptable for all source files? — *Verified: acceptable via batch converter. Prefer WebP-native sources where possible.*
+4. Contextual trigger patterns in `emotion_map.yaml` need a full pass after animation library migration is complete (tracked in dv-1tv).
