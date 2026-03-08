@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, KeyboardEvent } from 'react';
 import { Copy, Trash2 } from 'lucide-react';
 import { AssetTheme, InboxItem, LibraryAsset, SavePayload } from '../types';
-import { EMOTIONS, STATES } from '../constants';
+import { EMOTIONS, STATES, EVENT_TAGS } from '../constants';
 import { CircleCheck } from './CircleCheck';
 
 interface TagPanelProps {
@@ -103,7 +103,7 @@ export function TagPanel({
 
   const canSave =
     filename.trim() !== '' &&
-    (selectedEmotions.length > 0 || selectedStates.length > 0);
+    (selectedEmotions.length > 0 || selectedStates.length > 0 || customTags.length > 0);
 
   const handleSave = () => {
     if (!canSave || isSaving) return;
@@ -169,6 +169,29 @@ export function TagPanel({
                 onChange={() => toggleState(state)}
                 className="text-xs"
               />
+            ))}
+          </div>
+        </section>
+
+        {/* EVENT TAGS */}
+        <section>
+          <h3 className={sectionHeader}>Events</h3>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {EVENT_TAGS.map(tag => (
+              <button
+                key={tag}
+                onClick={() => {
+                  if (!customTags.includes(tag)) setCustomTags(prev => [...prev, tag]);
+                  else setCustomTags(prev => prev.filter(t => t !== tag));
+                }}
+                className={
+                  customTags.includes(tag)
+                    ? 'bg-[#f97316]/30 text-[#f97316] text-xs px-2 py-0.5 rounded border border-[#f97316]/50'
+                    : 'bg-white/5 text-white/40 text-xs px-2 py-0.5 rounded border border-white/10 hover:text-white/60 hover:border-white/20 transition-colors'
+                }
+              >
+                {tag}
+              </button>
             ))}
           </div>
         </section>
@@ -272,7 +295,7 @@ export function TagPanel({
           <p className="text-[10px] text-center text-white/25">
             {filename.trim() === ''
               ? 'Enter a filename to enable save'
-              : 'Select at least one emotion or state'}
+              : 'Select at least one emotion, state, or tag'}
           </p>
         ) : null}
 

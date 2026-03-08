@@ -13,7 +13,7 @@ export interface EditAction {
 
 export type AssetTheme = 'dark' | 'light' | 'both';
 
-/** A file in data/animations/inbox/ — imported but not yet tagged or saved */
+/** A file in animations/inbox/ — imported but not yet tagged or saved */
 export interface InboxItem {
   id: string;
   /** The actual File object (from file picker or copied from disk) */
@@ -29,7 +29,7 @@ export interface InboxItem {
   historyIndex: number;
 }
 
-/** A tagged, baked animation in data/animations/ — has a manifest entry */
+/** A tagged, baked animation in animations/ — has a manifest entry */
 export interface LibraryAsset {
   /** filename only, e.g. "floyd_prism.webp" */
   file: string;
@@ -44,7 +44,7 @@ export interface LibraryAsset {
   previewUrl?: string;
 }
 
-/** Shape of data/animations/manifest.json */
+/** Shape of animations/manifest.json */
 export interface Manifest {
   version: 1;
   assets: LibraryAsset[];

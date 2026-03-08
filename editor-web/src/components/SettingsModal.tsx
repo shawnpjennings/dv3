@@ -55,10 +55,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, folderNa
               className="flex items-center gap-2 px-3 py-2 bg-[#00d2ff]/10 hover:bg-[#00d2ff]/20 border border-[#00d2ff]/30 text-[#00d2ff] rounded text-xs transition-colors disabled:opacity-50"
             >
               <FolderOpen className="w-3.5 h-3.5" />
-              {folderName ? 'Change Folder' : 'Select data/animations Folder'}
+              {folderName ? 'Change Folder' : 'Select animations Folder'}
             </button>
             <p className="text-[10px] text-white/35 leading-relaxed">
-              Grant access to your <span className="text-white/60 font-mono">data/animations/</span> folder.
+              Grant access to your <span className="text-white/60 font-mono">animations/</span> folder.
               Exports will write directly to <span className="text-white/60 font-mono">emotions/</span> and <span className="text-white/60 font-mono">contextual/</span> subfolders — no ZIP download needed.
             </p>
           </div>

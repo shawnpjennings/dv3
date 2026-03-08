@@ -11,7 +11,7 @@ async function getFFmpeg(): Promise<FFmpeg> {
 }
 
 /**
- * Get or create the inbox/ subdirectory under data/animations/.
+ * Get or create the inbox/ subdirectory under animations/.
  */
 export async function getOrCreateInboxDir(
   animationsHandle: FileSystemDirectoryHandle,

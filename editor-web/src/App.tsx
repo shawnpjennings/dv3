@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { FolderOpen, Settings } from 'lucide-react';
-import { Asset, EditorSettings, ActionType, BatchRenamePayload, InboxItem, LibraryAsset, SavePayload } from './types';
+import { Asset, EditorSettings, ActionType, BatchRenamePayload, InboxItem, LibraryAsset, SavePayload, Manifest } from './types';
 import { GalleryPanel } from './components/GalleryPanel';
 import { SidebarPanel } from './components/SidebarPanel';
 import { TopToolbar } from './components/TopToolbar';
@@ -9,6 +9,8 @@ import { EditorPanel } from './components/EditorPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TagPanel } from './components/TagPanel';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { ToastContainer, ToastData } from './components/Toast';
 import { deleteAssetFromDB, loadAssetsFromDB, saveAssetToDB, loadSettingsFromDB, saveSettingsToDB, saveDirectoryHandle, loadDirectoryHandle } from './lib/db';
 import { executeBatchExport } from './lib/exportUtils';
 import { bakeAndSave } from './lib/bakeUtils';
@@ -65,6 +67,24 @@ function AppContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
 
+  // Custom confirm dialog state (replaces window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    message: string;
+    confirmLabel?: string;
+    destructive?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
+
+  // Toast notification state (replaces window.alert)
+  const [toasts, setToasts] = useState<ToastData[]>([]);
+  const addToast = useCallback((message: string, type: 'error' | 'success' | 'info' = 'error', duration = 6000) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts(prev => [...prev, { id, message, type, duration }]);
+  }, []);
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -87,15 +107,25 @@ function AppContent() {
           setActiveAssetId(savedAssets[0].id);
         }
 
+        let libraryLoaded = false;
         if (savedHandle) {
           // Re-verify permission (browser requires re-grant after page reload)
           const typedHandle = savedHandle as DirHandle;
-          const perm = await typedHandle.queryPermission({ mode: 'readwrite' });
+          let perm = await typedHandle.queryPermission({ mode: 'readwrite' });
+          if (perm === 'prompt') {
+            // Proactively request so the library loads on startup
+            perm = await typedHandle.requestPermission({ mode: 'readwrite' });
+          }
           if (perm === 'granted') {
             setDirHandle(typedHandle);
             await loadLibrary(typedHandle);
+            libraryLoaded = true;
           }
-          // If 'prompt', we'll request on first export attempt
+        }
+
+        // Fallback: load library via dev server if File System API unavailable
+        if (!libraryLoaded) {
+          await loadLibrary(null);
         }
       } catch (err) {
         console.error('Failed to initialize DB data:', err);
@@ -197,13 +227,30 @@ function AppContent() {
     setShowSettings(false);
   };
 
-  const loadLibrary = async (handle: DirHandle) => {
+  const loadLibrary = async (handle: DirHandle | null) => {
+    // Try File System API handle first
+    if (handle) {
+      try {
+        const manifestHandle = await handle.getFileHandle('manifest.json');
+        const file = await manifestHandle.getFile();
+        const text = await file.text();
+        const data = JSON.parse(text);
+        setLibraryAssets(data.assets ?? []);
+        return;
+      } catch { /* fall through to dev-server */ }
+    }
+
+    // Fallback: fetch manifest via Vite dev server (works without user gesture)
     try {
-      const manifestHandle = await handle.getFileHandle('manifest.json');
-      const file = await manifestHandle.getFile();
-      const text = await file.text();
-      const data = JSON.parse(text);
-      setLibraryAssets(data.assets ?? []);
+      const res = await fetch('/@fs/home/shawn/projects/dv3/animations/manifest.json');
+      if (!res.ok) { setLibraryAssets([]); return; }
+      const data = await res.json();
+      const assets = (data.assets ?? []).map((a: LibraryAsset) => ({
+        ...a,
+        // Provide a dev-server preview URL so thumbnails work without File System API
+        previewUrl: `/@fs/home/shawn/projects/dv3/animations/${a.file}`,
+      }));
+      setLibraryAssets(assets);
     } catch {
       setLibraryAssets([]);
     }
@@ -323,48 +370,115 @@ function AppContent() {
 
   const handleDeleteInbox = () => {
     if (!activeInboxItem) return;
-    const confirmed = window.confirm(`Remove "${activeInboxItem.name}" from inbox?`);
-    if (!confirmed) return;
-    URL.revokeObjectURL(activeInboxItem.previewUrl);
-    setInboxItems(prev => prev.filter(i => i.id !== activeInboxItem.id));
-    setActiveInboxId(null);
+
+    const isLibraryItem = activeInboxItem.id.startsWith('lib_');
+    const source = isLibraryItem ? 'library' : 'inbox';
+    const message = `Remove "${activeInboxItem.name}" from ${source}?`;
+
+    setConfirmDialog({
+      message,
+      confirmLabel: 'Remove',
+      destructive: true,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+
+        if (isLibraryItem) {
+          // Extract the library file path from the temp inbox id (format: "lib_<file>")
+          const libraryFile = activeInboxItem.id.substring(4); // strip "lib_"
+
+          // Remove from in-memory library assets
+          setLibraryAssets(prev => prev.filter(a => a.file !== libraryFile));
+
+          // Update manifest.json on disk
+          if (dirHandle) {
+            try {
+              let manifest: Manifest = { version: 1, assets: [] };
+              try {
+                const mh = await dirHandle.getFileHandle('manifest.json');
+                const mf = await mh.getFile();
+                manifest = JSON.parse(await mf.text()) as Manifest;
+                if (!Array.isArray(manifest.assets)) manifest.assets = [];
+              } catch { /* no manifest yet */ }
+
+              manifest.assets = manifest.assets.filter(a => a.file !== libraryFile);
+
+              const manifestHandle = await dirHandle.getFileHandle('manifest.json', { create: true });
+              const mWritable = await manifestHandle.createWritable();
+              const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+              await mWritable.write(new Blob([manifestBytes.buffer as ArrayBuffer], { type: 'application/json' }));
+              await mWritable.close();
+
+              // Also delete the actual file from disk (best-effort)
+              try {
+                const parts = libraryFile.split('/');
+                let dir: FileSystemDirectoryHandle = dirHandle;
+                for (let i = 0; i < parts.length - 1; i++) {
+                  dir = await dir.getDirectoryHandle(parts[i]);
+                }
+                await dir.removeEntry(parts[parts.length - 1]);
+              } catch {
+                // File may already be gone
+              }
+            } catch (err) {
+              console.error('Failed to update manifest on remove:', err);
+              addToast('Failed to remove from library on disk. The file may still exist.', 'error');
+            }
+          }
+        }
+
+        // Remove from inbox items (covers both real inbox items and library temp items)
+        URL.revokeObjectURL(activeInboxItem.previewUrl);
+        setInboxItems(prev => prev.filter(i => i.id !== activeInboxItem.id));
+        setActiveInboxId(null);
+
+        if (isLibraryItem) {
+          setActiveLibraryFile(null);
+        }
+      },
+    });
   };
 
-  const handleDeleteAsset = async (id: string) => {
+  const handleDeleteAsset = (id: string) => {
     const assetToDelete = assets.find(a => a.id === id);
     if (!assetToDelete) return;
 
-    const shouldDelete = window.confirm(`Remove "${assetToDelete.name}" from the library?`);
-    if (!shouldDelete) return;
+    setConfirmDialog({
+      message: `Remove "${assetToDelete.name}" from the library?`,
+      confirmLabel: 'Remove',
+      destructive: true,
+      onConfirm: async () => {
+        setConfirmDialog(null);
 
-    const linkedId = assetToDelete.linkedVariantId;
-    if (linkedId) {
-      const linkedAssetRecord = assets.find(a => a.id === linkedId);
-      if (linkedAssetRecord) {
-        await saveAssetToDB({ ...linkedAssetRecord, linkedVariantId: undefined });
-      }
-    }
+        const linkedId = assetToDelete.linkedVariantId;
+        if (linkedId) {
+          const linkedAssetRecord = assets.find(a => a.id === linkedId);
+          if (linkedAssetRecord) {
+            await saveAssetToDB({ ...linkedAssetRecord, linkedVariantId: undefined });
+          }
+        }
 
-    await deleteAssetFromDB(id);
-    URL.revokeObjectURL(assetToDelete.fileUrl);
+        await deleteAssetFromDB(id);
+        URL.revokeObjectURL(assetToDelete.fileUrl);
 
-    const remaining = assets.filter(a => a.id !== id);
-    setAssets(remaining.map(a => (a.id === linkedId ? { ...a, linkedVariantId: undefined } : a)));
+        const remaining = assets.filter(a => a.id !== id);
+        setAssets(remaining.map(a => (a.id === linkedId ? { ...a, linkedVariantId: undefined } : a)));
 
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
+        setSelectedIds(prev => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+
+        if (lastSelectedIdRef.current === id) {
+          lastSelectedIdRef.current = null;
+        }
+
+        if (activeAssetId === id) {
+          setActiveAssetId(remaining.length > 0 ? remaining[0].id : null);
+          setCompareMode(false);
+        }
+      },
     });
-
-    if (lastSelectedIdRef.current === id) {
-      lastSelectedIdRef.current = null;
-    }
-
-    if (activeAssetId === id) {
-      setActiveAssetId(remaining.length > 0 ? remaining[0].id : null);
-      setCompareMode(false);
-    }
   };
 
   const filteredAssets = useMemo(() => {
@@ -452,7 +566,7 @@ function AppContent() {
     } catch (err) {
       console.error('Export failed:', err);
       const details = err instanceof Error ? err.message : String(err);
-      alert(`Export failed: ${details}`);
+      addToast(`Export failed: ${details}`, 'error');
     } finally {
       setIsExporting(false);
       setExportStatus('');
@@ -545,26 +659,57 @@ function AppContent() {
     setActiveLibraryFile(file);
     setActiveTab('library');
 
-    if (!dirHandle) return;
+    const tempId = `lib_${file}`;
+    const parts = file.split('/');
+    const filename = parts[parts.length - 1];
+    const baseName = filename.replace(/\.webp$/, '').replace(/\.gif$/, '');
 
-    try {
-      // Navigate path segments (e.g. "library/filename.webp" → subdir + filename)
-      const parts = file.split('/');
-      let dir: FileSystemDirectoryHandle = dirHandle;
-      for (let i = 0; i < parts.length - 1; i++) {
-        dir = await dir.getDirectoryHandle(parts[i]);
+    // Try File System API first
+    if (dirHandle) {
+      try {
+        let dir: FileSystemDirectoryHandle = dirHandle;
+        for (let i = 0; i < parts.length - 1; i++) {
+          dir = await dir.getDirectoryHandle(parts[i]);
+        }
+        const fh = await dir.getFileHandle(filename);
+        const f = await fh.getFile();
+
+        const url = URL.createObjectURL(f);
+        const tempItem: InboxItem = {
+          id: tempId,
+          file: f,
+          previewUrl: url,
+          name: baseName,
+          type: f.type || 'image/webp',
+          editStack: [],
+          historyIndex: -1,
+        };
+
+        setInboxItems(prev => {
+          const filtered = prev.filter(i => i.id !== tempId);
+          return [...filtered, tempItem];
+        });
+        setActiveInboxId(tempId);
+        return;
+      } catch (err) {
+        console.warn('File System API load failed, trying dev server:', err);
       }
-      const filename = parts[parts.length - 1];
-      const fh = await dir.getFileHandle(filename);
-      const f = await fh.getFile();
+    }
 
+    // Fallback: fetch via dev server
+    try {
+      const devUrl = `/@fs/home/shawn/projects/dv3/animations/${file}`;
+      const res = await fetch(devUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const f = new File([blob], filename, { type: blob.type || 'image/webp' });
       const url = URL.createObjectURL(f);
-      const tempId = `lib_${file}`;
+
       const tempItem: InboxItem = {
         id: tempId,
         file: f,
         previewUrl: url,
-        name: filename.replace(/\.webp$/, '').replace(/\.gif$/, ''),
+        name: baseName,
         type: f.type || 'image/webp',
         editStack: [],
         historyIndex: -1,
@@ -618,7 +763,7 @@ function AppContent() {
     setSaveStatus('Baking edits...');
     try {
       const libraryAsset = await bakeAndSave(activeInboxItem, payload, dirHandle);
-      // Add to library (replace if same filename already exists)
+      // Add to library (replace if same filename already exists — supports re-save)
       setLibraryAssets(prev => {
         const existing = prev.findIndex(a => a.file === libraryAsset.file);
         if (existing >= 0) {
@@ -628,21 +773,44 @@ function AppContent() {
         }
         return [...prev, libraryAsset];
       });
-      // Remove from inbox and revoke preview URL, then select next inbox item
+
+      // Remove the active inbox item and any stale temp lib_ items for the same file.
+      // This prevents the "already in library but still in inbox" duplication (Bug dv-xst).
+      const savedLibFile = libraryAsset.file; // e.g. "library/filename.webp"
+      const staleLibId = `lib_${savedLibFile}`;
+      const itemId = activeInboxItem.id;
+
       URL.revokeObjectURL(activeInboxItem.previewUrl);
       setInboxItems(prev => {
-        const next = prev.filter(i => i.id !== activeInboxItem.id);
-        // Select the next available inbox item (stay on inbox tab)
+        const next = prev.filter(i => {
+          if (i.id === itemId) return false;            // Remove the item we just saved
+          if (i.id === staleLibId) return false;        // Remove stale lib_ temp item if present
+          return true;
+        });
+        // Revoke any stale lib_ preview URL
+        const staleItem = prev.find(i => i.id === staleLibId && i.id !== itemId);
+        if (staleItem) URL.revokeObjectURL(staleItem.previewUrl);
+
+        // Select the next available inbox item (prefer real inbox items over lib_ temps)
         const nextItem = next.find(i => !i.id.startsWith('lib_')) ?? next[0] ?? null;
         setActiveInboxId(nextItem?.id ?? null);
         return next;
       });
-      setSaveStatus('Saved!');
+
+      const isReEdit = activeInboxItem.id.startsWith('lib_');
+      setSaveStatus(isReEdit ? 'Updated!' : 'Saved!');
+      addToast(
+        isReEdit
+          ? `"${payload.filename}" updated in library.`
+          : `"${payload.filename}" saved to library.`,
+        'success',
+        3000
+      );
       setTimeout(() => setSaveStatus(''), 2000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setSaveStatus(`Save failed: ${msg}`);
-      alert(`Save failed: ${msg}`);
+      addToast(`Save failed: ${msg}`, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -821,6 +989,19 @@ function AppContent() {
           </div>
         </div>
       )}
+
+      {/* Custom confirm dialog (replaces window.confirm) */}
+      <ConfirmDialog
+        open={confirmDialog !== null}
+        message={confirmDialog?.message ?? ''}
+        confirmLabel={confirmDialog?.confirmLabel}
+        destructive={confirmDialog?.destructive}
+        onConfirm={() => confirmDialog?.onConfirm()}
+        onCancel={() => setConfirmDialog(null)}
+      />
+
+      {/* Toast notifications (replaces window.alert) */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

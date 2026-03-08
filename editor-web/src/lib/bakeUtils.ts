@@ -2,7 +2,7 @@
  * bakeUtils.ts — Inbox → Library bake-and-save pipeline.
  *
  * Applies a single InboxItem's edit stack via FFmpeg, writes the result
- * to data/animations/{filename}.webp in the connected directory, and
+ * to animations/{filename}.webp in the connected directory, and
  * updates manifest.json.  Simpler than executeBatchExport — no ZIP,
  * no batch loop, no metadata embedding in the WebP stream.
  */
@@ -260,7 +260,7 @@ const buildFilters = (item: InboxItem, sourceIsAnimated: boolean): string[] => {
  * @param item             The InboxItem to bake.
  * @param payload          Tag/filename data from the TagPanel.
  * @param animationsHandle FileSystemDirectoryHandle pointing at
- *                         data/animations/ (the root the user connected).
+ *                         animations/ (the root the user connected).
  */
 export async function bakeAndSave(
   item: InboxItem,
@@ -391,7 +391,7 @@ export async function bakeAndSave(
   }
 
   // -------------------------------------------------------------------------
-  // 2. Write baked WebP to data/animations/library/{outName}
+  // 2. Write baked WebP to animations/library/{outName}
   // -------------------------------------------------------------------------
   const libraryHandle = await animationsHandle.getDirectoryHandle('library', { create: true });
   const fileHandle = await libraryHandle.getFileHandle(outName, { create: true });

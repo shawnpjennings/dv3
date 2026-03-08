@@ -1,8 +1,50 @@
 import * as React from 'react';
 import { useState, useRef } from 'react';
 import { Upload, Image as ImageIcon, Search, CheckSquare, Square, Link2, Settings as SettingsIcon, Layers, Type, Trash2, Pencil, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { Asset, BatchRenamePayload } from '../types';
+import { Asset, EditAction, ActionType, BatchRenamePayload } from '../types';
 import { EMOTIONS, CONTEXTS } from '../constants';
+
+function computeThumbStyles(editStack: EditAction[], historyIndex: number): React.CSSProperties {
+  const stack = editStack.slice(0, historyIndex + 1);
+  const get = (type: ActionType, def: number | boolean): number | boolean => {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].type === type) return stack[i].value;
+    }
+    return def;
+  };
+
+  let filter = '';
+  let transform = '';
+
+  if (get('FLIP_H', false)) transform += 'scaleX(-1) ';
+  if (get('FLIP_V', false)) transform += 'scaleY(-1) ';
+
+  const bright = get('BRIGHTNESS', 100) as number;
+  const cont = get('CONTRAST', 100) as number;
+  const hue = get('HUE', 0) as number;
+  const sat = get('SATURATION', 100) as number;
+  if (bright !== 100) filter += `brightness(${bright}%) `;
+  if (cont !== 100) filter += `contrast(${cont}%) `;
+  if (get('INVERT', false)) filter += 'invert(100%) ';
+  if (get('GRAYSCALE', false)) filter += 'grayscale(100%) ';
+  if (hue !== 0) filter += `hue-rotate(${hue}deg) `;
+  if (sat !== 100) filter += `saturate(${sat}%) `;
+
+  const zoomOffset = get('PADDING', 0) as number;
+  const zoomScale = Math.min(2.5, Math.max(0.15, 1 + zoomOffset / 300));
+  const cropScale = get('SQUARE_CROP', false) ? 1.2 : 1;
+
+  const posX = get('POSITION_X', 0) as number;
+  const posY = get('POSITION_Y', 0) as number;
+  if (posX !== 0) transform += `translateX(${posX}px) `;
+  if (posY !== 0) transform += `translateY(${posY}px) `;
+
+  return {
+    filter: filter.trim() || undefined,
+    transform: `${transform.trim()} scale(${cropScale * zoomScale})`.trim(),
+    transformOrigin: 'center center',
+  };
+}
 
 interface GalleryPanelProps {
   assets: Asset[];
@@ -153,7 +195,12 @@ export const GalleryPanel: React.FC<GalleryPanelProps> = ({
                   }}
                   className={`relative aspect-square bg-black rounded overflow-hidden cursor-pointer border-2 transition-all group ${isActive ? 'border-[#f97316] shadow-lg shadow-[#f97316]/30' : isSelected ? 'border-[#00d2ff]' : `border-transparent hover:border-white/20`} ${isGif && !isActive && !isSelected ? 'ring-1 ring-amber-500/30' : ''}`}
                 >
-                  <img src={asset.fileUrl} className="w-full h-full object-cover" alt={asset.name} />
+                  <img
+                    src={asset.fileUrl}
+                    className="w-full h-full object-cover"
+                    alt={asset.name}
+                    style={computeThumbStyles(asset.editStack, asset.historyIndex)}
+                  />
 
                   <div
                     onClick={(e) => { e.stopPropagation(); onToggleSelection(asset.id, e); }}
