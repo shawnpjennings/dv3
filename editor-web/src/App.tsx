@@ -398,19 +398,6 @@ function AppContent() {
     setSelectedIds(newSelection);
   };
 
-  const handleLinkVariant = (targetId: string) => {
-    if (!activeAsset) return;
-    updateAsset(activeAsset.id, { linkedVariantId: targetId });
-    updateAsset(targetId, { linkedVariantId: activeAsset.id });
-  };
-
-  const handleUnlinkVariant = () => {
-    if (!activeAsset || !activeAsset.linkedVariantId) return;
-    updateAsset(activeAsset.linkedVariantId, { linkedVariantId: undefined });
-    updateAsset(activeAsset.id, { linkedVariantId: undefined });
-    setCompareMode(false);
-  };
-
   const doExport = async (assetsToExport: Asset[]) => {
     // If we have a saved handle, ensure permission is still granted
     let activeHandle = dirHandle;
@@ -445,11 +432,6 @@ function AppContent() {
       setExportStatus('');
       setExportProgress(0);
     }
-  };
-
-  const handleExport = () => {
-    if (!activeAsset) return;
-    doExport([activeAsset]);
   };
 
   const handleBatchExport = () => {
@@ -529,16 +511,6 @@ function AppContent() {
       setImportStatus('');
     }
   };
-
-  const dv3PathPreview = activeAsset
-    ? (() => {
-        const subpath = (activeAsset.context && activeAsset.context !== 'idle')
-          ? `contextual/${activeAsset.context}`
-          : `emotions/${activeAsset.emotion || 'neutral'}`;
-        const root = dirHandle ? dirHandle.name : settings.exportRoot;
-        return `${root}/${subpath}/${activeAsset.name.replace(/\s+/g, '_').toLowerCase()}.webp`;
-      })()
-    : '';
 
   const activeInboxItem = inboxItems.find(i => i.id === activeInboxId) ?? null;
 
@@ -732,16 +704,10 @@ function AppContent() {
           <>
             <TopToolbar
               activeAsset={(activeInboxAsset ?? activeAsset)!}
-              linkedAsset={activeInboxAsset ? undefined : linkedAsset}
-              availableAssets={activeInboxAsset ? [] : assets.filter(a => a.id !== activeAsset?.id && !a.linkedVariantId)}
-              dv3PathPreview={activeInboxAsset ? '' : dv3PathPreview}
               onUndo={handleUndo}
               onRedo={handleRedo}
               onDuplicate={activeInboxAsset ? () => {} : handleDuplicate}
               onDelete={activeInboxAsset ? () => {} : () => handleDeleteAsset(activeAsset!.id)}
-              onExport={activeInboxAsset ? () => {} : handleExport}
-              onLinkVariant={activeInboxAsset ? () => {} : handleLinkVariant}
-              onUnlinkVariant={activeInboxAsset ? () => {} : handleUnlinkVariant}
             />
             <EditorPanel
               activeAsset={(activeInboxAsset ?? activeAsset)!}

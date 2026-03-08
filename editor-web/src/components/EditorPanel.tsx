@@ -1,8 +1,7 @@
 import * as React from 'react';
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { Sliders, FlipHorizontal, FlipVertical, FastForward, Maximize, Eye, EyeOff, FileText, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Sliders, FlipHorizontal, FlipVertical, FastForward, Maximize, Eye, EyeOff, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import { Asset, ActionType } from '../types';
-import { EMOTIONS, CONTEXTS } from '../constants';
 import { VariantComparison } from './VariantComparison';
 
 interface EditorPanelProps {
@@ -26,7 +25,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
   onToggleCompareMode,
   onToggleDv3Preview,
   onUpdateAsset,
-  onApplyEdit
+  onApplyEdit,
 }) => {
   const PREVIEW_SIZE = 750;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -35,24 +34,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
   const [isDecodingSpeedPreview, setIsDecodingSpeedPreview] = useState(false);
   const [speedPreviewUnavailable, setSpeedPreviewUnavailable] = useState(false);
 
-  const [showSaved, setShowSaved] = useState(false);
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleMetadataUpdate = useCallback((id: string, updates: Partial<Asset>) => {
-    onUpdateAsset(id, updates);
-    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-    setShowSaved(true);
-    savedTimerRef.current = setTimeout(() => setShowSaved(false), 1500);
-  }, [onUpdateAsset]);
-
-  useEffect(() => {
-    return () => {
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-    };
-  }, []);
-
   const [openSections, setOpenSections] = useState({
-    metadata: true,
     layout: true,
     tone: true,
     temporal: true,
@@ -362,76 +344,6 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
       </div>
 
       <div className="w-80 bg-black border-l border-white/10 flex flex-col overflow-y-auto z-10 custom-scrollbar">
-        <section className="border-b border-white/10 bg-black">
-          <button onClick={() => toggleSection('metadata')} className="w-full p-4 flex items-center justify-between text-left hover:bg-white/10 transition-colors">
-            <h3 className="text-xs font-display text-[#00d2ff] uppercase tracking-wider flex items-center gap-2">
-              <FileText className="w-3 h-3"/> Metadata & Routing
-              {showSaved && (
-                <span className="text-[10px] text-green-400 uppercase tracking-wide transition-opacity duration-300">
-                  ✓ Saved
-                </span>
-              )}
-            </h3>
-            {openSections.metadata ? <ChevronDown className="w-4 h-4 text-white/70" /> : <ChevronRight className="w-4 h-4 text-white/70" />}
-          </button>
-          {openSections.metadata && <div className="px-5 pb-5 space-y-4 text-sm"> 
-          <div className="space-y-4 text-sm">
-            <div>
-              <label className="block text-white/60 text-xs mb-1.5 uppercase tracking-wide">Filename</label>
-              <input
-                type="text"
-                value={activeAsset.name}
-                onChange={e => handleMetadataUpdate(activeAsset.id, { name: e.target.value })}
-                className="w-full bg-black border border-white/10 rounded px-3 py-2 focus:border-[#f97316] outline-none text-white transition-all"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-white/60 text-xs mb-1.5 uppercase tracking-wide">Emotion</label>
-                <select
-                  value={activeAsset.emotion}
-                  onChange={e => handleMetadataUpdate(activeAsset.id, { emotion: e.target.value })}
-                  className="w-full bg-black border border-white/10 rounded px-2 py-2 focus:border-[#f97316] outline-none text-white"
-                >
-                  {EMOTIONS.map(e => <option key={e} value={e}>{e}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-white/60 text-xs mb-1.5 uppercase tracking-wide">Context</label>
-                <select
-                  value={activeAsset.context}
-                  onChange={e => handleMetadataUpdate(activeAsset.id, { context: e.target.value })}
-                  className="w-full bg-black border border-white/10 rounded px-2 py-2 focus:border-[#f97316] outline-none text-white"
-                >
-                  {CONTEXTS.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="block text-white/60 text-xs mb-1.5 uppercase tracking-wide">Theme</label>
-              <select
-                value={activeAsset.theme ?? 'dark'}
-                onChange={e => handleMetadataUpdate(activeAsset.id, { theme: e.target.value as 'dark' | 'light' | 'both' })}
-                className="w-full bg-black border border-white/10 rounded px-2 py-2 focus:border-[#f97316] outline-none text-white"
-              >
-                <option value="dark">Dark (black bg)</option>
-                <option value="light">Light (white bg)</option>
-                <option value="both">Both</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-white/60 text-xs mb-1.5 uppercase tracking-wide">Notes</label>
-              <textarea
-                value={activeAsset.notes}
-                placeholder="Licensing, origins, loop logic..."
-                onChange={e => handleMetadataUpdate(activeAsset.id, { notes: e.target.value })}
-                className="w-full bg-black border border-white/10 rounded px-3 py-2 focus:border-[#f97316] outline-none text-white transition-all min-h-[60px] text-xs resize-y"
-              />
-            </div>
-          </div>
-          </div>}
-        </section>
-
         <section className="border-b border-white/10 bg-black">
           <p className="text-[10px] text-white/40 leading-relaxed px-5 py-3 border-b border-white/10">
             Edits are non-destructive — your original file is never modified.
