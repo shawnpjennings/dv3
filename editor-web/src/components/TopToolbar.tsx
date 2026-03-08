@@ -19,7 +19,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 }) => {
   if (!activeAsset) {
     return (
-      <div className="h-14 border-b border-white/10 bg-black/90 backdrop-blur flex items-center px-4 shrink-0 z-10" />
+      <div className="h-10 border-b border-white/10 bg-black/90 backdrop-blur flex items-center px-4 shrink-0 z-10" />
     );
   }
 
@@ -27,7 +27,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   const canRedo = activeAsset.historyIndex < activeAsset.editStack.length - 1;
 
   return (
-    <div className="h-14 border-b border-white/10 bg-black/90 backdrop-blur flex items-center justify-end px-4 shrink-0 z-10">
+    <div className="h-10 border-b border-white/10 bg-black/90 backdrop-blur flex items-center justify-end px-4 shrink-0 z-10">
       <div className="flex items-center gap-2">
         <button onClick={onUndo} disabled={!canUndo} className="p-2 hover:bg-white/10 disabled:opacity-30 rounded text-white/60 hover:text-white transition-colors" title="Undo">
           <Undo className="w-4 h-4" />

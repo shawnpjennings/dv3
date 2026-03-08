@@ -114,7 +114,7 @@ export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave, onC
     );
   }
 
-  const sectionHeader = 'text-xs font-bold tracking-widest text-white/40 uppercase mb-2';
+  const sectionHeader = 'text-xs font-bold tracking-wider text-[#00d2ff] uppercase mb-2 flex items-center gap-1.5';
 
   return (
     <div className="w-[320px] flex-none bg-[#0a0a0a] border-l border-white/10 flex flex-col overflow-hidden">
@@ -234,14 +234,14 @@ export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave, onC
       </div>
 
       {/* Save footer */}
-      <div className="px-4 pb-4 pt-3 border-t border-white/10 space-y-2">
+      <div className="px-4 pb-5 pt-4 border-t border-white/10 space-y-2">
         <button
           onClick={handleSave}
           disabled={!canSave || isSaving}
           className={
             canSave && !isSaving
-              ? 'bg-[#f97316] text-black font-bold py-3 w-full rounded hover:bg-[#ea6c0a] transition-colors text-sm'
-              : 'bg-white/10 text-white/30 font-bold py-3 w-full rounded cursor-not-allowed text-sm'
+              ? 'bg-[#f97316] text-black font-black py-3.5 w-full rounded hover:bg-[#ea6c0a] transition-colors text-sm tracking-widest shadow-lg shadow-[#f97316]/30'
+              : 'bg-white/10 text-white/30 font-bold py-3.5 w-full rounded cursor-not-allowed text-sm'
           }
         >
           {isSaving ? 'SAVING…' : 'SAVE'}
