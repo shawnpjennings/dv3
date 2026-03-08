@@ -700,11 +700,6 @@ class DV3App:
             except asyncio.TimeoutError:
                 continue
 
-            # Skip silent frames — don't flood Gemini with silence
-            rms = float(np.sqrt(np.mean(chunk_f32 ** 2)))
-            if rms < 0.005:
-                continue
-
             # Convert float32 [-1, 1] -> int16 PCM bytes
             int16_data = (chunk_f32 * 32767).astype(np.int16)
             pcm_bytes = int16_data.tobytes()
