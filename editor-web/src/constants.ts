@@ -7,3 +7,12 @@ export const EMOTIONS = [
 export const CONTEXTS = [
   'music', 'weather', 'special', 'idle', 'system'
 ];
+
+export const STATES = [
+  'idle',
+  'listening',
+  'processing',
+  'thinking',
+] as const;
+
+export type StateTag = typeof STATES[number];
