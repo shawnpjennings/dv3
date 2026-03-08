@@ -680,7 +680,7 @@ function AppContent() {
   const visibilityClass = isTabVisible ? '' : 'pause-animations';
 
   return (
-    <div className={`flex h-screen bg-black text-white overflow-hidden ${visibilityClass}`}>
+    <div className={`flex flex-col h-screen bg-black text-white overflow-hidden ${visibilityClass}`}>
       <style dangerouslySetInnerHTML={{__html: `
         .checkerboard {
           background-image: linear-gradient(45deg, #131316 25%, transparent 25%),
@@ -703,6 +703,39 @@ function AppContent() {
         }
       `}} />
 
+      {/* APP HEADER */}
+      <header className="h-10 flex items-center justify-between px-4 border-b border-white/10 bg-black shrink-0 z-20">
+        <span className="text-xs font-bold tracking-[0.2em] text-white uppercase">DV3 EDITOR</span>
+        <div className="flex items-center gap-3">
+          {dirHandle ? (
+            <button
+              onClick={handleSelectFolder}
+              className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/80 transition-colors"
+              title="Change folder"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-[#f97316]" />
+              <span className="truncate max-w-[200px]">{dirHandle.name}</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleSelectFolder}
+              className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors"
+              title="Connect animations folder to enable save"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>Connect folder</span>
+            </button>
+          )}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-1.5 text-white/40 hover:text-white transition-colors rounded hover:bg-white/10"
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+      </header>
+
       {uploadError && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] bg-red-900 border border-red-700 text-white px-4 py-3 rounded shadow-2xl flex flex-col items-center gap-2 max-w-lg">
           <span className="font-bold text-sm">Upload Error</span>
@@ -711,57 +744,60 @@ function AppContent() {
         </div>
       )}
 
-      {/* Legacy GalleryPanel kept for reference, replaced by SidebarPanel */}
-      <SidebarPanel
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        inboxItems={inboxItems}
-        activeInboxId={activeInboxId}
-        libraryAssets={libraryAssets}
-        activeLibraryFile={activeLibraryFile}
-        dirHandle={dirHandle}
-        onSelectInbox={(id) => setActiveInboxId(id)}
-        onImport={handleImport}
-        onSelectLibrary={handleSelectLibrary}
-      />
+      {/* MAIN 3-COLUMN LAYOUT */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Legacy GalleryPanel kept for reference, replaced by SidebarPanel */}
+        <SidebarPanel
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          inboxItems={inboxItems}
+          activeInboxId={activeInboxId}
+          libraryAssets={libraryAssets}
+          activeLibraryFile={activeLibraryFile}
+          dirHandle={dirHandle}
+          onSelectInbox={(id) => setActiveInboxId(id)}
+          onImport={handleImport}
+          onSelectLibrary={handleSelectLibrary}
+        />
 
-      <div className="flex-1 flex flex-col min-w-0">
-        {!(activeInboxAsset ?? activeAsset) ? (
-          <div className="flex-1 flex items-center justify-center text-white/50 bg-black checkerboard">
-            Select a file from Inbox to preview and edit.
-          </div>
-        ) : (
-          <>
-            <TopToolbar
-              activeAsset={(activeInboxAsset ?? activeAsset)!}
-              onUndo={handleUndo}
-              onRedo={handleRedo}
-              onDuplicate={activeInboxAsset ? handleDuplicateInbox : handleDuplicate}
-              onDelete={activeInboxAsset ? handleDeleteInbox : () => handleDeleteAsset(activeAsset!.id)}
-            />
-            <EditorPanel
-              activeAsset={(activeInboxAsset ?? activeAsset)!}
-              linkedAsset={activeInboxAsset ? undefined : linkedAsset}
-              compareMode={activeInboxAsset ? false : compareMode}
-              dv3PreviewMode={activeInboxAsset ? false : dv3PreviewMode}
-              isExporting={isExporting}
-              onToggleCompareMode={activeInboxAsset ? () => {} : () => setCompareMode(!compareMode)}
-              onToggleDv3Preview={activeInboxAsset ? () => {} : () => setDv3PreviewMode(!dv3PreviewMode)}
-              onUpdateAsset={activeInboxAsset ? () => {} : updateAsset}
-              onApplyEdit={applyEdit}
-            />
-          </>
-        )}
+        <div className="flex-1 flex flex-col min-w-0">
+          {!(activeInboxAsset ?? activeAsset) ? (
+            <div className="flex-1 flex items-center justify-center text-white/50 bg-black checkerboard">
+              Select a file from Inbox to preview and edit.
+            </div>
+          ) : (
+            <>
+              <TopToolbar
+                activeAsset={(activeInboxAsset ?? activeAsset)!}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                onDuplicate={activeInboxAsset ? handleDuplicateInbox : handleDuplicate}
+                onDelete={activeInboxAsset ? handleDeleteInbox : () => handleDeleteAsset(activeAsset!.id)}
+              />
+              <EditorPanel
+                activeAsset={(activeInboxAsset ?? activeAsset)!}
+                linkedAsset={activeInboxAsset ? undefined : linkedAsset}
+                compareMode={activeInboxAsset ? false : compareMode}
+                dv3PreviewMode={activeInboxAsset ? false : dv3PreviewMode}
+                isExporting={isExporting}
+                onToggleCompareMode={activeInboxAsset ? () => {} : () => setCompareMode(!compareMode)}
+                onToggleDv3Preview={activeInboxAsset ? () => {} : () => setDv3PreviewMode(!dv3PreviewMode)}
+                onUpdateAsset={activeInboxAsset ? () => {} : updateAsset}
+                onApplyEdit={applyEdit}
+              />
+            </>
+          )}
+        </div>
+
+        <TagPanel
+          item={activeInboxItem}
+          libraryAsset={activeLibraryAsset}
+          isSaving={isSaving}
+          saveStatus={saveStatus}
+          onSave={handleSave}
+          onConnectFolder={handleSelectFolder}
+        />
       </div>
-
-      <TagPanel
-        item={activeInboxItem}
-        libraryAsset={activeLibraryAsset}
-        isSaving={isSaving}
-        saveStatus={saveStatus}
-        onSave={handleSave}
-        onConnectFolder={handleSelectFolder}
-      />
 
       {showSettings && (
         <SettingsModal
