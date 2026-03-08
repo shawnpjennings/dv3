@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { FolderOpen, Settings } from 'lucide-react';
 import { Asset, EditorSettings, ActionType, BatchRenamePayload, InboxItem, LibraryAsset, SavePayload } from './types';
 import { GalleryPanel } from './components/GalleryPanel';
 import { SidebarPanel } from './components/SidebarPanel';
@@ -214,6 +215,7 @@ function AppContent() {
         .showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
       await saveDirectoryHandle(handle);
       setDirHandle(handle);
+      setSaveStatus('');
     } catch (err) {
       // User cancelled picker — ignore
       if (err instanceof Error && err.name !== 'AbortError') {
@@ -302,6 +304,30 @@ function AppContent() {
     await saveAssetToDB(duplicatedAsset);
     setAssets(prev => [...prev, duplicatedAsset]);
     setActiveAssetId(duplicatedAsset.id);
+  };
+
+  const handleDuplicateInbox = () => {
+    if (!activeInboxItem) return;
+    const dup: InboxItem = {
+      id: Math.random().toString(36).substring(2, 9),
+      file: activeInboxItem.file,
+      previewUrl: URL.createObjectURL(activeInboxItem.file),
+      name: `${activeInboxItem.name}_copy`,
+      type: activeInboxItem.type,
+      editStack: [...activeInboxItem.editStack],
+      historyIndex: activeInboxItem.historyIndex,
+    };
+    setInboxItems(prev => [...prev, dup]);
+    setActiveInboxId(dup.id);
+  };
+
+  const handleDeleteInbox = () => {
+    if (!activeInboxItem) return;
+    const confirmed = window.confirm(`Remove "${activeInboxItem.name}" from inbox?`);
+    if (!confirmed) return;
+    URL.revokeObjectURL(activeInboxItem.previewUrl);
+    setInboxItems(prev => prev.filter(i => i.id !== activeInboxItem.id));
+    setActiveInboxId(null);
   };
 
   const handleDeleteAsset = async (id: string) => {
@@ -602,8 +628,12 @@ function AppContent() {
       : null;
 
   const handleSave = async (payload: SavePayload) => {
-    if (!activeInboxItem || !dirHandle) {
-      alert('No file selected or no folder connected. Please select a folder first.');
+    if (!activeInboxItem) {
+      setSaveStatus('No file selected.');
+      return;
+    }
+    if (!dirHandle) {
+      setSaveStatus('no-folder');
       return;
     }
     setIsSaving(true);
@@ -698,7 +728,7 @@ function AppContent() {
       <div className="flex-1 flex flex-col min-w-0">
         {!(activeInboxAsset ?? activeAsset) ? (
           <div className="flex-1 flex items-center justify-center text-white/50 bg-black checkerboard">
-            Select an asset from the gallery to edit.
+            Select a file from Inbox to preview and edit.
           </div>
         ) : (
           <>
@@ -730,6 +760,7 @@ function AppContent() {
         isSaving={isSaving}
         saveStatus={saveStatus}
         onSave={handleSave}
+        onConnectFolder={handleSelectFolder}
       />
 
       {showSettings && (

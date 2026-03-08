@@ -14,9 +14,11 @@ interface TagPanelProps {
   saveStatus: string;
   /** Called when user clicks Save */
   onSave: (payload: SavePayload) => void;
+  /** Called to open the folder picker (shown inline when no folder is connected) */
+  onConnectFolder?: () => void;
 }
 
-export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave }: TagPanelProps) {
+export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave, onConnectFolder }: TagPanelProps) {
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>([]);
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [customTags, setCustomTags] = useState<string[]>([]);
@@ -118,8 +120,7 @@ export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave }: T
     <div className="w-[320px] flex-none bg-[#0a0a0a] border-l border-white/10 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-white/10">
-        <h2 className={sectionHeader}>Tag Panel</h2>
-        <p className="text-[10px] text-white/25 truncate">{item.name}</p>
+        <p className="text-[11px] text-white/60 font-mono truncate">{item.name}</p>
       </div>
 
       {/* Scrollable body */}
@@ -245,9 +246,21 @@ export function TagPanel({ item, libraryAsset, isSaving, saveStatus, onSave }: T
         >
           {isSaving ? 'SAVING…' : 'SAVE'}
         </button>
-        {saveStatus && (
+        {saveStatus === 'no-folder' ? (
+          <div className="text-center space-y-1">
+            <p className="text-[10px] text-amber-400">No folder connected</p>
+            {onConnectFolder && (
+              <button
+                onClick={onConnectFolder}
+                className="text-[10px] text-[#f97316] hover:text-[#fb923c] underline transition-colors"
+              >
+                Connect animations folder
+              </button>
+            )}
+          </div>
+        ) : saveStatus ? (
           <p className="text-[10px] text-center text-white/40">{saveStatus}</p>
-        )}
+        ) : null}
         {!canSave && !isSaving && (
           <p className="text-[10px] text-center text-white/25">
             {filename.trim() === ''
