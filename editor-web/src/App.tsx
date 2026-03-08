@@ -226,6 +226,22 @@ function AppContent() {
   const linkedAsset = activeAsset?.linkedVariantId ? assets.find(a => a.id === activeAsset.linkedVariantId) : undefined;
 
   const applyEdit = (type: ActionType, value: number | boolean) => {
+    // If an inbox item is active (includes library re-edits), update that instead
+    if (activeInboxId) {
+      setInboxItems(prev => prev.map(item => {
+        if (item.id !== activeInboxId) return item;
+        const stack = item.editStack.slice(0, item.historyIndex + 1);
+        const last = stack[stack.length - 1];
+        if (last && last.type === type) {
+          stack[stack.length - 1] = { type, value };
+        } else {
+          stack.push({ type, value });
+        }
+        return { ...item, editStack: stack, historyIndex: stack.length - 1 };
+      }));
+      return;
+    }
+
     if (!activeAsset) return;
 
     // Keep a true chronological action history so undo/redo can step through
@@ -249,11 +265,25 @@ function AppContent() {
   };
 
   const handleUndo = () => {
+    if (activeInboxItem) {
+      if (activeInboxItem.historyIndex < 0) return;
+      setInboxItems(prev => prev.map(i =>
+        i.id === activeInboxItem.id ? { ...i, historyIndex: i.historyIndex - 1 } : i
+      ));
+      return;
+    }
     if (!activeAsset || activeAsset.historyIndex < 0) return;
     updateAsset(activeAsset.id, { historyIndex: activeAsset.historyIndex - 1 });
   };
 
   const handleRedo = () => {
+    if (activeInboxItem) {
+      if (activeInboxItem.historyIndex >= activeInboxItem.editStack.length - 1) return;
+      setInboxItems(prev => prev.map(i =>
+        i.id === activeInboxItem.id ? { ...i, historyIndex: i.historyIndex + 1 } : i
+      ));
+      return;
+    }
     if (!activeAsset || activeAsset.historyIndex >= activeAsset.editStack.length - 1) return;
     updateAsset(activeAsset.id, { historyIndex: activeAsset.historyIndex + 1 });
   };
@@ -512,6 +542,93 @@ function AppContent() {
 
   const activeInboxItem = inboxItems.find(i => i.id === activeInboxId) ?? null;
 
+  // When a library asset is selected, create a temporary InboxItem so EditorPanel can show a preview
+  const handleSelectLibrary = async (file: string) => {
+    setActiveLibraryFile(file);
+    setActiveTab('library');
+
+    if (!dirHandle) return;
+
+    try {
+      // Search root, then 1-2 levels deep (same logic as LibraryPanel.loadPreviewUrl)
+      const tryGet = async (dir: FileSystemDirectoryHandle, name: string): Promise<File | null> => {
+        try {
+          const fh = await dir.getFileHandle(name);
+          return fh.getFile();
+        } catch {
+          return null;
+        }
+      };
+
+      let f: File | null = await tryGet(dirHandle, file);
+      if (!f) {
+        outer: for await (const [, entry] of (dirHandle as unknown as AsyncIterable<[string, FileSystemHandle]>)) {
+          if (entry.kind === 'directory') {
+            const subDir = entry as FileSystemDirectoryHandle;
+            f = await tryGet(subDir, file);
+            if (f) break;
+            for await (const [, subEntry] of (subDir as unknown as AsyncIterable<[string, FileSystemHandle]>)) {
+              if (subEntry.kind === 'directory') {
+                f = await tryGet(subEntry as FileSystemDirectoryHandle, file);
+                if (f) break outer;
+              }
+            }
+          }
+        }
+      }
+
+      if (!f) {
+        console.warn('Could not locate file in library:', file);
+        return;
+      }
+
+      const url = URL.createObjectURL(f);
+      const tempId = `lib_${file}`;
+      const tempItem: InboxItem = {
+        id: tempId,
+        file: f,
+        previewUrl: url,
+        name: file.replace(/\.webp$/, '').replace(/\.gif$/, ''),
+        type: f.type || 'image/webp',
+        editStack: [],
+        historyIndex: -1,
+      };
+
+      setInboxItems(prev => {
+        const filtered = prev.filter(i => i.id !== tempId);
+        return [...filtered, tempItem];
+      });
+      setActiveInboxId(tempId);
+    } catch (err) {
+      console.warn('Could not load library asset for editing:', err);
+    }
+  };
+
+  // Derive an Asset-compatible object from the active InboxItem so EditorPanel can preview it
+  const activeInboxAsset: Asset | undefined = activeInboxItem
+    ? {
+        id: activeInboxItem.id,
+        originalFile: activeInboxItem.file,
+        fileUrl: activeInboxItem.previewUrl,
+        name: activeInboxItem.name,
+        type: activeInboxItem.type,
+        emotion: 'neutral',
+        additionalEmotions: [],
+        context: 'idle',
+        theme: 'dark' as const,
+        title: '',
+        notes: '',
+        editStack: activeInboxItem.editStack,
+        historyIndex: activeInboxItem.historyIndex,
+      }
+    : undefined;
+
+  // When re-editing a library asset, pass its metadata to TagPanel for pre-population
+  const activeLibraryAsset: LibraryAsset | null =
+    activeInboxId?.startsWith('lib_')
+      ? (libraryAssets.find(a => `lib_${a.file}` === activeInboxId) ?? null)
+      : null;
+
   const handleSave = async (payload: SavePayload) => {
     if (!activeInboxItem || !dirHandle) {
       alert('No file selected or no folder connected. Please select a folder first.');
@@ -603,38 +720,38 @@ function AppContent() {
         dirHandle={dirHandle}
         onSelectInbox={(id) => setActiveInboxId(id)}
         onImport={handleImport}
-        onSelectLibrary={(file) => setActiveLibraryFile(file)}
+        onSelectLibrary={handleSelectLibrary}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
-        {!activeAsset ? (
+        {!(activeInboxAsset ?? activeAsset) ? (
           <div className="flex-1 flex items-center justify-center text-white/50 bg-black checkerboard">
             Select an asset from the gallery to edit.
           </div>
         ) : (
           <>
             <TopToolbar
-              activeAsset={activeAsset}
-              linkedAsset={linkedAsset}
-              availableAssets={assets.filter(a => a.id !== activeAsset.id && !a.linkedVariantId)}
-              dv3PathPreview={dv3PathPreview}
+              activeAsset={(activeInboxAsset ?? activeAsset)!}
+              linkedAsset={activeInboxAsset ? undefined : linkedAsset}
+              availableAssets={activeInboxAsset ? [] : assets.filter(a => a.id !== activeAsset?.id && !a.linkedVariantId)}
+              dv3PathPreview={activeInboxAsset ? '' : dv3PathPreview}
               onUndo={handleUndo}
               onRedo={handleRedo}
-              onDuplicate={handleDuplicate}
-              onDelete={() => handleDeleteAsset(activeAsset.id)}
-              onExport={handleExport}
-              onLinkVariant={handleLinkVariant}
-              onUnlinkVariant={handleUnlinkVariant}
+              onDuplicate={activeInboxAsset ? () => {} : handleDuplicate}
+              onDelete={activeInboxAsset ? () => {} : () => handleDeleteAsset(activeAsset!.id)}
+              onExport={activeInboxAsset ? () => {} : handleExport}
+              onLinkVariant={activeInboxAsset ? () => {} : handleLinkVariant}
+              onUnlinkVariant={activeInboxAsset ? () => {} : handleUnlinkVariant}
             />
             <EditorPanel
-              activeAsset={activeAsset}
-              linkedAsset={linkedAsset}
-              compareMode={compareMode}
-              dv3PreviewMode={dv3PreviewMode}
+              activeAsset={(activeInboxAsset ?? activeAsset)!}
+              linkedAsset={activeInboxAsset ? undefined : linkedAsset}
+              compareMode={activeInboxAsset ? false : compareMode}
+              dv3PreviewMode={activeInboxAsset ? false : dv3PreviewMode}
               isExporting={isExporting}
-              onToggleCompareMode={() => setCompareMode(!compareMode)}
-              onToggleDv3Preview={() => setDv3PreviewMode(!dv3PreviewMode)}
-              onUpdateAsset={updateAsset}
+              onToggleCompareMode={activeInboxAsset ? () => {} : () => setCompareMode(!compareMode)}
+              onToggleDv3Preview={activeInboxAsset ? () => {} : () => setDv3PreviewMode(!dv3PreviewMode)}
+              onUpdateAsset={activeInboxAsset ? () => {} : updateAsset}
               onApplyEdit={applyEdit}
             />
           </>
@@ -643,6 +760,7 @@ function AppContent() {
 
       <TagPanel
         item={activeInboxItem}
+        libraryAsset={activeLibraryAsset}
         isSaving={isSaving}
         saveStatus={saveStatus}
         onSave={handleSave}
