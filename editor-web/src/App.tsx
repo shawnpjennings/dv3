@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Asset, EditorSettings, ActionType, BatchRenamePayload } from './types';
+import { Asset, EditorSettings, ActionType, BatchRenamePayload, InboxItem, LibraryAsset } from './types';
 import { GalleryPanel } from './components/GalleryPanel';
 import { TopToolbar } from './components/TopToolbar';
 import { EditorPanel } from './components/EditorPanel';
@@ -35,7 +35,6 @@ function AppContent() {
   const lastSelectedIdRef = useRef<string | null>(null);
 
   const [settings, setSettings] = useState<EditorSettings>({
-    exportRoot: 'data/animations',
     defaultPadding: 0
   });
 
@@ -48,6 +47,15 @@ function AppContent() {
 
   // Tab visibility state for thumbnail playback optimization
   const [isTabVisible, setIsTabVisible] = useState(true);
+
+  // New inbox/library state model
+  const [activeTab, setActiveTab] = useState<'inbox' | 'library'>('inbox');
+  const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  const [activeInboxId, setActiveInboxId] = useState<string | null>(null);
+  const [libraryAssets, setLibraryAssets] = useState<LibraryAsset[]>([]);
+  const [activeLibraryFile, setActiveLibraryFile] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -77,6 +85,7 @@ function AppContent() {
           const perm = await typedHandle.queryPermission({ mode: 'readwrite' });
           if (perm === 'granted') {
             setDirHandle(typedHandle);
+            await loadLibrary(typedHandle);
           }
           // If 'prompt', we'll request on first export attempt
         }
@@ -178,6 +187,18 @@ function AppContent() {
     setSettings(newSettings);
     await saveSettingsToDB(newSettings);
     setShowSettings(false);
+  };
+
+  const loadLibrary = async (handle: DirHandle) => {
+    try {
+      const manifestHandle = await handle.getFileHandle('manifest.json');
+      const file = await manifestHandle.getFile();
+      const text = await file.text();
+      const data = JSON.parse(text);
+      setLibraryAssets(data.assets ?? []);
+    } catch {
+      setLibraryAssets([]);
+    }
   };
 
   const handleSelectFolder = async () => {
