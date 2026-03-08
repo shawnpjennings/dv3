@@ -1,11 +1,12 @@
 import * as React from 'react';
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Asset, EditorSettings, ActionType, BatchRenamePayload, InboxItem, LibraryAsset } from './types';
+import { Asset, EditorSettings, ActionType, BatchRenamePayload, InboxItem, LibraryAsset, SavePayload } from './types';
 import { GalleryPanel } from './components/GalleryPanel';
 import { TopToolbar } from './components/TopToolbar';
 import { EditorPanel } from './components/EditorPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { TagPanel } from './components/TagPanel';
 import { deleteAssetFromDB, loadAssetsFromDB, saveAssetToDB, loadSettingsFromDB, saveSettingsToDB, saveDirectoryHandle, loadDirectoryHandle } from './lib/db';
 import { executeBatchExport } from './lib/exportUtils';
 import { validateUpload } from './lib/validation';
@@ -459,6 +460,12 @@ function AppContent() {
       })()
     : '';
 
+  const activeInboxItem = inboxItems.find(i => i.id === activeInboxId) ?? null;
+
+  const handleSave = (payload: SavePayload) => {
+    console.log('save', payload);
+  };
+
   if (!isReady) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-black text-[#f97316] space-y-4">
@@ -557,6 +564,13 @@ function AppContent() {
           </>
         )}
       </div>
+
+      <TagPanel
+        item={activeInboxItem}
+        isSaving={isSaving}
+        saveStatus={saveStatus}
+        onSave={handleSave}
+      />
 
       {showSettings && (
         <SettingsModal
