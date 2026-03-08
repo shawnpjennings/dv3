@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Asset, EditorSettings, ActionType, BatchRenamePayload, InboxItem, LibraryAsset, SavePayload } from './types';
 import { GalleryPanel } from './components/GalleryPanel';
+import { SidebarPanel } from './components/SidebarPanel';
 import { TopToolbar } from './components/TopToolbar';
 import { EditorPanel } from './components/EditorPanel';
 import { SettingsModal } from './components/SettingsModal';
@@ -450,6 +451,20 @@ function AppContent() {
     setAssets(updatedAssets);
   };
 
+  const handleImport = (files: File[]) => {
+    const newItems: InboxItem[] = files.map(file => ({
+      id: Math.random().toString(36).substring(2, 9),
+      file,
+      previewUrl: URL.createObjectURL(file),
+      name: file.name.replace(/\.[^/.]+$/, ''),
+      type: file.type,
+      editStack: [],
+      historyIndex: -1,
+    }));
+    setInboxItems(prev => [...prev, ...newItems]);
+    if (!activeInboxId && newItems.length > 0) setActiveInboxId(newItems[0].id);
+  };
+
   const dv3PathPreview = activeAsset
     ? (() => {
         const subpath = (activeAsset.context && activeAsset.context !== 'idle')
@@ -509,25 +524,18 @@ function AppContent() {
         </div>
       )}
 
-      <GalleryPanel
-        assets={filteredAssets}
-        activeAssetId={activeAssetId}
-        selectedIds={selectedIds}
-        searchQuery={searchQuery}
-        filterEmotion={filterEmotion}
-        filterContext={filterContext}
-        filterType={filterType}
-        onSearchChange={setSearchQuery}
-        onFilterEmotionChange={setFilterEmotion}
-        onFilterContextChange={setFilterContext}
-        onFilterTypeChange={setFilterType}
-        onUpload={handleFileUpload}
-        onSelectAsset={(id) => { setActiveAssetId(id); setCompareMode(false); lastSelectedIdRef.current = id; }}
-        onToggleSelection={toggleSelection}
-        onBatchExport={handleBatchExport}
-        onBatchRename={handleBatchRename}
-        onDeleteAsset={handleDeleteAsset}
-        onOpenSettings={() => setShowSettings(true)}
+      {/* Legacy GalleryPanel kept for reference, replaced by SidebarPanel */}
+      <SidebarPanel
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        inboxItems={inboxItems}
+        activeInboxId={activeInboxId}
+        libraryAssets={libraryAssets}
+        activeLibraryFile={activeLibraryFile}
+        dirHandle={dirHandle}
+        onSelectInbox={(id) => setActiveInboxId(id)}
+        onImport={handleImport}
+        onSelectLibrary={(file) => setActiveLibraryFile(file)}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
