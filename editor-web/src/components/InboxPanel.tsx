@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { useRef } from 'react';
 import { Upload, Image as ImageIcon } from 'lucide-react';
 import type { InboxItem } from '../types';
 import { computeThumbStyles } from '../lib/thumbStyles';
@@ -17,8 +16,6 @@ export const InboxPanel: React.FC<InboxPanelProps> = ({
   onSelect,
   onImport,
 }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
@@ -38,21 +35,18 @@ export const InboxPanel: React.FC<InboxPanelProps> = ({
             </span>
           )}
         </div>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 bg-[#f97316] hover:bg-[#fb923c] text-white text-xs font-medium px-3 py-1.5 rounded transition-colors shadow-lg shadow-[#f97316]/20"
-        >
+        {/* Use label+input for reliable cross-browser file picker triggering */}
+        <label className="flex items-center gap-1.5 bg-[#f97316] hover:bg-[#fb923c] text-white text-xs font-medium px-3 py-1.5 rounded transition-colors shadow-lg shadow-[#f97316]/20 cursor-pointer">
           <Upload className="w-3.5 h-3.5" />
           Import
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".webp,.gif,image/webp,image/gif"
-          multiple
-          className="hidden"
-          onChange={handleFileChange}
-        />
+          <input
+            type="file"
+            accept=".webp,.gif,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={handleFileChange}
+          />
+        </label>
       </div>
 
       {/* Item grid */}
