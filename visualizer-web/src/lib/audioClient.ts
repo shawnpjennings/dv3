@@ -25,6 +25,7 @@ export class AudioClient {
   private playbackCtx: AudioContext | null = null;
   private nextPlayTime = 0;
   private isCapturing = false;
+  private _isSpeaking = false;
 
   /**
    * Start capturing mic audio.
@@ -146,10 +147,16 @@ export class AudioClient {
   /**
    * Play incoming TTS audio from the backend.
    * @param pcmInt16 Raw PCM int16 bytes, 24 kHz mono (Gemini native audio output).
+   *
+   * Creates the playback AudioContext at the browser's default rate (usually
+   * 48 kHz) and tags each AudioBuffer at 24 kHz.  The Web Audio API
+   * automatically resamples 24→48 kHz during playback.
    */
   playAudio(pcmInt16: ArrayBuffer): void {
     if (!this.playbackCtx) {
-      this.playbackCtx = new AudioContext({ sampleRate: PLAYBACK_SAMPLE_RATE });
+      // Use default browser sample rate (typically 48 kHz) — Web Audio API
+      // will resample the 24 kHz buffer automatically.
+      this.playbackCtx = new AudioContext();
     }
 
     const int16View = new Int16Array(pcmInt16);
@@ -158,6 +165,7 @@ export class AudioClient {
       float32[i] = int16View[i] / 32768;
     }
 
+    // Tag buffer at source rate (24 kHz) — context resamples to output rate
     const buffer = this.playbackCtx.createBuffer(1, float32.length, PLAYBACK_SAMPLE_RATE);
     buffer.getChannelData(0).set(float32);
 
@@ -166,9 +174,22 @@ export class AudioClient {
     source.connect(this.playbackCtx.destination);
 
     const now = this.playbackCtx.currentTime;
+    // If schedule has drifted more than 500ms behind real-time, reset
+    // to prevent accumulating delay across turns.
+    if (this.nextPlayTime < now - 0.5) {
+      this.nextPlayTime = now;
+    }
     const startTime = Math.max(now, this.nextPlayTime);
     source.start(startTime);
     this.nextPlayTime = startTime + buffer.duration;
+
+    // Track speaking state for mic suppression
+    this._isSpeaking = true;
+    source.onended = () => {
+      if (this.playbackCtx && this.playbackCtx.currentTime >= this.nextPlayTime - 0.01) {
+        this._isSpeaking = false;
+      }
+    };
   }
 
   /** Reset playback scheduling (call when conversation ends). */
@@ -178,5 +199,10 @@ export class AudioClient {
 
   get capturing(): boolean {
     return this.isCapturing;
+  }
+
+  /** True while TTS audio is playing through speakers. */
+  get speaking(): boolean {
+    return this._isSpeaking;
   }
 }

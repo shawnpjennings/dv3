@@ -38,6 +38,7 @@ class VisualizerWSServer:
         # Audio queue: browser mic PCM arrives here as float32 numpy arrays
         # (same format as wake_word._audio_queue for drop-in compatibility).
         self.audio_in_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=200)
+        self._audio_chunk_count = 0
 
     async def start(self) -> None:
         self._runner = web.AppRunner(self._app)
@@ -63,25 +64,29 @@ class VisualizerWSServer:
     async def emit_tag(self, tag: str) -> None:
         await self._broadcast({"type": "tag", "tag": tag})
 
+    async def emit_wakeword(self, confidence: float) -> None:
+        await self._broadcast({"type": "wakeword", "confidence": float(confidence)})
+
     # --- Outbound audio (binary) ---
 
     async def send_audio(self, pcm_int16_bytes: bytes) -> None:
-        """Send TTS audio to all connected browser clients.
+        """Send TTS audio to ONE connected browser client.
 
-        The bytes are raw PCM int16, 16 kHz mono.  We prepend a 1-byte
+        Only sends to the first client to prevent doubling when React
+        StrictMode (or multiple tabs) creates duplicate WS connections.
+        The bytes are raw PCM int16, 24 kHz mono.  We prepend a 1-byte
         type header (0x01) so the browser can distinguish audio from
         other binary messages.
         """
         if not self._clients:
             return
         payload = b'\x01' + pcm_int16_bytes
-        dead = set()
-        for ws in list(self._clients):
-            try:
-                await ws.send_bytes(payload)
-            except Exception:
-                dead.add(ws)
-        self._clients -= dead
+        # Send to first client only — prevents audio doubling
+        ws = next(iter(self._clients))
+        try:
+            await ws.send_bytes(payload)
+        except Exception:
+            self._clients.discard(ws)
 
     # --- Internal ---
 
@@ -122,6 +127,14 @@ class VisualizerWSServer:
         try:
             int16_arr = np.frombuffer(data, dtype=np.int16)
             float32_arr = int16_arr.astype(np.float32) / 32767.0
+            self._audio_chunk_count += 1
+            rms = float(np.sqrt(np.mean(float32_arr ** 2)))
+            if self._audio_chunk_count <= 3 or self._audio_chunk_count % 500 == 0 or rms > 0.01:
+                logger.debug(
+                    "Audio chunk #%d received (%d samples, rms=%.4f, queue=%d)",
+                    self._audio_chunk_count, len(float32_arr), rms,
+                    self.audio_in_queue.qsize(),
+                )
             try:
                 self.audio_in_queue.put_nowait(float32_arr)
             except asyncio.QueueFull:

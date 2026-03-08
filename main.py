@@ -120,7 +120,7 @@ def _configure_logging(debug: bool = False) -> None:
     logging.basicConfig(level=level, format=fmt, stream=sys.stderr)
 
     # Quiet noisy third-party loggers
-    for noisy in ("PIL", "urllib3", "google", "httpcore", "httpx"):
+    for noisy in ("PIL", "urllib3", "google", "httpcore", "httpx", "websockets"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
@@ -305,9 +305,14 @@ class DV3App:
         self.tool_dispatcher: Optional[ToolDispatcher] = None
         self.ws_server: Optional[VisualizerWSServer] = None
 
-        # Audio output
-        self._audio_output_stream = None
+        # Audio output via WebSocket (browser handles playback)
         self._sd = None
+
+        # Echo suppression: suppress mic input while Gemini audio is playing.
+        # Tracks the timestamp of the last audio chunk received.
+        self._last_audio_chunk_time: float = 0.0
+        # How long after last chunk before mic resumes (seconds)
+        self._playback_tail_s: float = 0.3
 
         # Current emotion for visualizer
         self._current_emotion: str = ""
@@ -393,62 +398,23 @@ class DV3App:
         logger.info("Voice backend: %s", backend)
 
         # ---- Wake word detector ----
+        # Uses local mic (sounddevice) for always-on wake word detection.
+        # During conversation, browser mic audio (with echo cancellation)
+        # is used instead — streamed via the WS server's audio_in_queue.
         from core.wake_word import WakeWordDetector
         config_path = str(PROJECT_ROOT / "config" / "settings.yaml")
-        # In headless mode, feed browser mic audio (from WS) into wake word
-        ext_queue = self.ws_server.audio_in_queue if not self._use_pygame else None
         self.wake_word = WakeWordDetector(
             config_path=config_path,
             on_detected=self._on_wake_word_detected,
-            external_audio_queue=ext_queue,
+            external_audio_queue=None,
         )
 
         # ---- Audio output ----
-        if self._use_pygame:
-            self._setup_audio_output()
-        else:
-            # Headless: TTS audio goes out via WS to the browser
-            logger.info("Audio output: WebSocket (browser playback)")
+        # TTS audio goes to browser via WebSocket (no local sounddevice).
+        # Browser handles playback with proper buffering + echo cancellation.
+        logger.info("Audio output: WebSocket (browser playback)")
 
         logger.info("=== Setup complete ===")
-
-    def _setup_audio_output(self) -> None:
-        """Configure the sounddevice output stream for Gemini TTS playback."""
-        try:
-            import sounddevice as sd
-            self._sd = sd
-        except ImportError:
-            logger.error(
-                "sounddevice is not installed -- audio output disabled"
-            )
-            return
-
-        audio_cfg = self.config.get("audio", {})
-        voice_cfg = self.config.get("voice", {})
-        sample_rate = int(voice_cfg.get("sample_rate", 16000))
-        prefer_pulse = bool(audio_cfg.get("prefer_pulse", True))
-        output_device = audio_cfg.get("output_device")
-
-        if output_device is None and prefer_pulse:
-            output_device = _find_output_device(sd, prefer_pulse)
-
-        try:
-            self._audio_output_stream = sd.RawOutputStream(
-                samplerate=sample_rate,
-                channels=1,
-                dtype="int16",
-                device=output_device,
-            )
-            self._audio_output_stream.start()
-            logger.info(
-                "Audio output stream opened: sr=%d, channels=1, "
-                "dtype=int16, device=%s",
-                sample_rate,
-                output_device,
-            )
-        except Exception:
-            logger.exception("Failed to open audio output stream")
-            self._audio_output_stream = None
 
     # ------------------------------------------------------------------
     # Main run loop
@@ -571,6 +537,12 @@ class DV3App:
                 self._set_state(STATE_LISTENING)
                 self._set_emotion("alert", crossfade=True)
 
+                # Notify browser of wake word detection
+                if self.ws_server:
+                    asyncio.create_task(
+                        self.ws_server.emit_wakeword(confidence)
+                    )
+
                 # Brief delay for the alert animation to show
                 await asyncio.sleep(0.3)
 
@@ -691,21 +663,20 @@ class DV3App:
     # ------------------------------------------------------------------
 
     async def _mic_stream_loop(self) -> None:
-        """Stream microphone audio to the Gemini pipeline.
+        """Stream browser mic audio to the Gemini pipeline.
 
-        Reads PCM float32 chunks from the wake word detector's audio
-        queue and converts them to int16 PCM before sending to the
-        pipeline.  Runs until shutdown or the pipeline disconnects.
+        During conversation, reads from the WS server's audio_in_queue
+        (browser mic with echo cancellation) instead of the local
+        sounddevice mic.  The local mic continues feeding the wake word
+        detector independently.
         """
-        if self.wake_word is None or not self.wake_word._running:
-            logger.warning("Wake word detector not running; mic stream unavailable")
+        if self.ws_server is None:
+            logger.warning("No WS server; mic stream unavailable")
             return
 
-        audio_queue = self.wake_word._audio_queue
+        audio_queue = self.ws_server.audio_in_queue
 
-        # Drain stale audio that accumulated during pipeline connection.
-        # These are old chunks (silence, tail of wake word) that would
-        # confuse Gemini if sent as a burst.
+        # Drain stale audio from browser queue
         drained = 0
         while not audio_queue.empty():
             try:
@@ -714,7 +685,7 @@ class DV3App:
             except asyncio.QueueEmpty:
                 break
         if drained:
-            logger.debug("Drained %d stale audio chunks before mic streaming", drained)
+            logger.debug("Drained %d stale browser audio chunks", drained)
 
         chunks_sent = 0
         while (
@@ -738,7 +709,7 @@ class DV3App:
                 chunks_sent += 1
                 if chunks_sent <= 3 or chunks_sent % 50 == 0:
                     logger.debug(
-                        "Sent audio chunk #%d to Gemini (%d bytes, rms=%.4f)",
+                        "Sent browser audio chunk #%d to Gemini (%d bytes, rms=%.4f)",
                         chunks_sent, len(pcm_bytes),
                         np.sqrt(np.mean(chunk_f32 ** 2)),
                     )
@@ -752,31 +723,45 @@ class DV3App:
         logger.debug("Mic stream loop ended (sent %d chunks total)", chunks_sent)
 
     async def _audio_receive_loop(self) -> None:
-        """Receive and play audio responses from Gemini.
+        """Receive audio from Gemini and send to browser via WebSocket.
 
-        In headless mode, sends PCM chunks to the browser via WebSocket.
-        With --pygame, writes to the sounddevice output stream.
+        The browser handles playback with proper buffering and echo
+        cancellation — no ALSA underrun issues.
         """
-        use_ws = not self._use_pygame and self.ws_server is not None
-        use_sd = self._audio_output_stream is not None
-
-        if not use_ws and not use_sd:
-            logger.warning("No audio output available; consuming silently")
+        if self.ws_server is None:
+            logger.warning("No WS server; consuming audio silently")
             async for _chunk in self.pipeline.receive_audio():
                 pass
             return
 
+        # Batch small chunks into ~200ms blocks before sending to browser.
+        # Reduces WS message overhead and AudioBufferSource scheduling load.
+        # 200ms at 24kHz int16 mono = 9600 bytes
+        BATCH_BYTES = 24000 * 2 // 5  # 9600 bytes = 200ms
+
         try:
+            batch = bytearray()
             async for chunk in self.pipeline.receive_audio():
                 if self._shutdown_event.is_set():
                     break
-                try:
-                    if use_ws:
-                        await self.ws_server.send_audio(chunk)
-                    elif use_sd:
-                        self._audio_output_stream.write(chunk)
-                except Exception:
-                    logger.exception("Error writing audio output")
+                # Turn-complete sentinel — flush remaining batch
+                if len(chunk) == 0:
+                    if batch:
+                        await self.ws_server.send_audio(bytes(batch))
+                        batch.clear()
+                    self._last_audio_chunk_time = time.monotonic()
+                    continue
+
+                self._last_audio_chunk_time = time.monotonic()
+                batch.extend(chunk)
+
+                if len(batch) >= BATCH_BYTES:
+                    await self.ws_server.send_audio(bytes(batch))
+                    batch.clear()
+
+            # Flush any remaining
+            if batch:
+                await self.ws_server.send_audio(bytes(batch))
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -970,15 +955,6 @@ class DV3App:
                 await self.wake_word.stop()
             except Exception:
                 logger.exception("Error stopping wake word detector")
-
-        # Close audio output stream
-        if self._audio_output_stream is not None:
-            try:
-                self._audio_output_stream.stop()
-                self._audio_output_stream.close()
-            except Exception:
-                logger.exception("Error closing audio output stream")
-            self._audio_output_stream = None
 
         # Stop WebSocket event server
         if self.ws_server is not None:

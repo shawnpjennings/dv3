@@ -185,8 +185,7 @@ class WakeWordDetector:
 
         Model = _import_openwakeword()
         self._model = Model(
-            wakeword_models=[str(model_file)],
-            inference_framework="onnx",
+            wakeword_model_paths=[str(model_file)],
         )
         logger.info("OpenWakeWord model loaded from %s", model_file)
 
@@ -390,6 +389,8 @@ class WakeWordDetector:
                     latest = preds[-1]
                     if latest > max_score:
                         max_score = latest
+            if max_score >= 0.05:
+                logger.debug("Wake word score: %.4f", max_score)
             return max_score
 
         except Exception:
