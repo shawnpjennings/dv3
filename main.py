@@ -304,18 +304,16 @@ class DV3App:
         self.gradient: Optional[GradientOverlay] = None
         self._GradientOverlay = GradientOverlay
 
-        # ---- Emotion mapper ----
-        emotion_map_path = PROJECT_ROOT / "config" / "emotion_map.yaml"
+        # ---- Emotion mapper (manifest-only) ----
         from visualizer.emotion_map import EmotionMapper
-        if emotion_map_path.exists():
-            self.emotion_mapper = EmotionMapper(str(emotion_map_path))
-        else:
+        manifest_path = PROJECT_ROOT / "data" / "animations" / "manifest.json"
+        self.emotion_mapper = EmotionMapper(str(manifest_path))
+        if self.emotion_mapper.asset_count() == 0:
             logger.warning(
-                "emotion_map.yaml not found at %s -- "
-                "using hardcoded neutral fallback",
-                emotion_map_path,
+                "No animations loaded — manifest missing or empty at %s. "
+                "Tag animations in the WebPew editor and save to populate it.",
+                manifest_path,
             )
-            self.emotion_mapper = None
 
         # ---- Load initial (neutral) animation ----
         self._set_emotion("neutral", crossfade=False)
@@ -841,27 +839,7 @@ class DV3App:
         Uses the EmotionMapper if available, otherwise falls back to
         a direct directory scan.
         """
-        if self.emotion_mapper is not None:
-            return self.emotion_mapper.get_animation_path(emotion)
-
-        # Fallback: scan the emotion directory directly
-        emotion_dir = PROJECT_ROOT / "data" / "animations" / "emotions" / emotion
-        if not emotion_dir.is_dir():
-            if emotion != "neutral":
-                # Try neutral as ultimate fallback
-                return self._resolve_animation_path("neutral")
-            return None
-
-        import random
-        files = [
-            str(f)
-            for f in emotion_dir.iterdir()
-            if f.is_file() and f.suffix.lower() in {".webp", ".gif"}
-        ]
-        if files:
-            return random.choice(files)
-
-        return None
+        return self.emotion_mapper.get_animation_path(emotion, theme="dark")
 
     # ------------------------------------------------------------------
     # Shutdown
