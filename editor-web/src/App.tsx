@@ -11,6 +11,7 @@ import { TagPanel } from './components/TagPanel';
 import { deleteAssetFromDB, loadAssetsFromDB, saveAssetToDB, loadSettingsFromDB, saveSettingsToDB, saveDirectoryHandle, loadDirectoryHandle } from './lib/db';
 import { executeBatchExport } from './lib/exportUtils';
 import { validateUpload } from './lib/validation';
+import { copyWebPToInbox, convertGifToInbox, getOrCreateInboxDir } from './lib/inboxUtils';
 
 // FileSystemDirectoryHandle.queryPermission/requestPermission are widely supported
 // but not yet in the TypeScript lib.
@@ -46,6 +47,9 @@ function AppContent() {
   const [exportStatus, setExportStatus] = useState('');
   const [exportProgress, setExportProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState('');
 
   // Tab visibility state for thumbnail playback optimization
   const [isTabVisible, setIsTabVisible] = useState(true);
@@ -451,7 +455,7 @@ function AppContent() {
     setAssets(updatedAssets);
   };
 
-  const handleImport = (files: File[]) => {
+  const handleImport = async (files: File[]) => {
     const newItems: InboxItem[] = files.map(file => ({
       id: Math.random().toString(36).substring(2, 9),
       file,
@@ -463,6 +467,36 @@ function AppContent() {
     }));
     setInboxItems(prev => [...prev, ...newItems]);
     if (!activeInboxId && newItems.length > 0) setActiveInboxId(newItems[0].id);
+
+    if (!dirHandle) return; // no folder selected yet — in-memory only
+
+    setIsImporting(true);
+    try {
+      const inboxDir = await getOrCreateInboxDir(dirHandle);
+      for (const item of newItems) {
+        if (item.type === 'image/gif') {
+          setImportStatus(`Converting ${item.name}...`);
+          const converted = await convertGifToInbox(item.file, inboxDir, (pct) => {
+            setImportStatus(`Converting ${item.name}... ${pct}%`);
+          });
+          URL.revokeObjectURL(item.previewUrl);
+          const newUrl = URL.createObjectURL(converted);
+          setInboxItems(prev =>
+            prev.map(i =>
+              i.id === item.id
+                ? { ...i, file: converted, previewUrl: newUrl, type: 'image/webp' }
+                : i
+            )
+          );
+        } else {
+          setImportStatus(`Copying ${item.name}...`);
+          await copyWebPToInbox(item.file, inboxDir);
+        }
+      }
+    } finally {
+      setIsImporting(false);
+      setImportStatus('');
+    }
   };
 
   const dv3PathPreview = activeAsset
@@ -604,6 +638,21 @@ function AppContent() {
 
             <p className="text-sm text-[#00d2ff] font-mono mb-2">{exportStatus}</p>
             <p className="text-xs text-white/50">Please do not close this tab. WASM encoding is running locally.</p>
+          </div>
+        </div>
+      )}
+
+      {isImporting && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-black border border-white/10 rounded-lg shadow-2xl w-[400px] overflow-hidden p-6 text-center">
+            <h2 className="font-display text-white mb-4 text-lg">Importing Files</h2>
+
+            <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden mb-3 border border-white/10">
+              <div className="h-full bg-[#f97316] animate-pulse w-full" />
+            </div>
+
+            <p className="text-sm text-[#00d2ff] font-mono mb-2">{importStatus}</p>
+            <p className="text-xs text-white/50">Please do not close this tab. Files are being written locally.</p>
           </div>
         </div>
       )}
