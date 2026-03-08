@@ -294,7 +294,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
               className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold uppercase tracking-wider backdrop-blur-md border border-white/10 transition-all ${dv3PreviewMode ? 'bg-white/10 text-[#f97316]' : 'bg-black/70 text-white hover:bg-white/10'}`}
             >
               {dv3PreviewMode ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-              DV3 Ambient Preview
+              Visualizer Preview
             </button>
           )}
         </div>
@@ -346,8 +346,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
       <div className="w-80 bg-black border-l border-white/10 flex flex-col overflow-y-auto z-10 custom-scrollbar">
         <section className="border-b border-white/10 bg-black">
           <p className="text-[10px] text-white/40 leading-relaxed px-5 py-3 border-b border-white/10">
-            Edits are non-destructive — your original file is never modified.
-            Use Export to render the final WebP with adjustments applied.
+            Edits are non-destructive. Tag and Save from the panel on the right to bake edits and add to your library.
           </p>
           <div className="px-5 py-3 border-b border-white/10">
             <button
@@ -562,7 +561,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
                 </div>
 
                 <p className="text-[10px] text-white/45 uppercase tracking-wide">
-                  Export-time approximation for dark backgrounds. Best on high-contrast assets.
+                  Save-time approximation for dark backgrounds. Best on high-contrast assets.
                 </p>
               </div>
             )}
@@ -576,11 +575,10 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
             {openSections.temporal ? <ChevronDown className="w-4 h-4 text-white/70" /> : <ChevronRight className="w-4 h-4 text-white/70" />}
           </button>
           {openSections.temporal && <div className="px-5 py-4"> 
-          <div className="text-[10px] uppercase tracking-wide font-bold text-[#f97316] mb-4 bg-white/10 p-2 rounded border border-white/10">Speed/Reverse apply on final WebP render.</div>
           <div className="text-[10px] uppercase tracking-wide text-[#00d2ff] mb-3">
             {isAnimatedAsset
               ? (isExporting
-                ? 'Live speed preview paused during export.'
+                ? 'Live speed preview paused during save.'
                 : (speed === 1 && !reverse
                   ? 'Set speed/reverse to enable live speed preview.'
                   : (isDecodingSpeedPreview
@@ -616,7 +614,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
           </div>
           <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer hover:text-white transition-colors">
             <input type="checkbox" checked={getEditValue('REVERSE', false) as boolean} onChange={(e) => onApplyEdit('REVERSE', e.target.checked)} className="w-4 h-4 rounded bg-black border-white/10 text-[#f97316] focus:ring-[#f97316]" />
-            Reverse Frames on Export
+            Reverse Frames on Save
           </label>
           </div>}
         </section>
