@@ -31,6 +31,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from core.visualizer_ws import VisualizerWSServer
+
 import numpy as np
 import pygame
 import yaml
@@ -263,6 +265,7 @@ class DV3App:
         self.wake_word: Optional[WakeWordDetector] = None
         self.pipeline: Optional[VoicePipelineBase] = None
         self.tool_dispatcher: Optional[ToolDispatcher] = None
+        self.ws_server: Optional[VisualizerWSServer] = None
 
         # Audio output
         self._audio_output_stream = None
@@ -314,6 +317,12 @@ class DV3App:
                 "Tag animations in the WebPew editor and save to populate it.",
                 manifest_path,
             )
+
+        # ---- WebSocket event server ----
+        ws_port = self.config.get("visualizer_ws_port", 8765)
+        self.ws_server = VisualizerWSServer(host="0.0.0.0", port=ws_port)
+        await self.ws_server.start()
+        logger.info("Visualizer WS server started on port %d", ws_port)
 
         # ---- Load initial (neutral) animation ----
         self._set_emotion("neutral", crossfade=False)
@@ -826,6 +835,9 @@ class DV3App:
         else:
             self.animation_engine.set_animation(animation)
 
+        if self.ws_server:
+            asyncio.create_task(self.ws_server.emit_emotion(emotion, theme="dark"))
+
         logger.debug(
             "Animation set for emotion '%s': %s (crossfade=%s)",
             emotion,
@@ -893,6 +905,14 @@ class DV3App:
             except Exception:
                 logger.exception("Error closing audio output stream")
             self._audio_output_stream = None
+
+        # Stop WebSocket event server
+        if self.ws_server is not None:
+            try:
+                await self.ws_server.stop()
+            except Exception:
+                logger.exception("Error stopping WebSocket server")
+            self.ws_server = None
 
         # Cleanup Pygame display
         if self.display is not None:
