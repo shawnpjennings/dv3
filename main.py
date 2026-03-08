@@ -1,9 +1,13 @@
 """DV3 Voice Companion -- application orchestrator.
 
 Single entry point that ties together wake word detection, the Gemini Live
-voice pipeline, emotion-driven animation, and tool dispatch.  Runs a
-Pygame render loop in the main thread with asyncio coordination for
-audio I/O, WebSocket communication, and inter-component queues.
+voice pipeline, emotion-driven animation, and tool dispatch.  Runs with
+asyncio coordination for audio I/O, WebSocket communication, and
+inter-component queues.
+
+By default runs in headless mode — no Pygame window.  The web visualizer
+at visualizer-web/ connects via WebSocket to receive emotion events.
+Pass ``--pygame`` to enable the legacy Pygame display.
 
 State machine:
     IDLE  ->  LISTENING  ->  CONVERSATION  ->  IDLE
@@ -11,9 +15,10 @@ State machine:
        +---------------------------------------+
 
 Usage:
-    python main.py            # normal startup
+    python main.py            # headless (web visualizer only)
     python main.py --debug    # verbose logging
-    python main.py --windowed # force windowed display (no fullscreen)
+    python main.py --pygame   # legacy Pygame display
+    python main.py --pygame --windowed  # Pygame in windowed mode
 """
 
 from __future__ import annotations
@@ -34,9 +39,14 @@ from typing import Optional
 from core.visualizer_ws import VisualizerWSServer
 
 import numpy as np
-import pygame
 import yaml
 from dotenv import load_dotenv
+
+# Pygame is optional — only needed with --pygame flag
+try:
+    import pygame
+except ImportError:
+    pygame = None  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
 # Project root -- all relative paths resolve from here.
@@ -275,19 +285,20 @@ class DV3App:
     render loop with asyncio coordination.
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, *, use_pygame: bool = False) -> None:
         self.config = config
         self.state: str = STATE_IDLE
+        self._use_pygame = use_pygame and pygame is not None
 
         # Shutdown coordination
         self._shutdown_event = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
 
         # Components -- initialized in setup()
-        self.display: Optional[DisplayManager] = None
-        self.animation_engine: Optional[AnimationEngine] = None
-        self.gradient: Optional[GradientOverlay] = None
-        self.emotion_mapper: Optional[EmotionMapper] = None
+        self.display = None
+        self.animation_engine = None
+        self.gradient = None
+        self.emotion_mapper = None
         self.emotion_parser: Optional[EmotionParser] = None
         self.wake_word: Optional[WakeWordDetector] = None
         self.pipeline: Optional[VoicePipelineBase] = None
@@ -301,8 +312,8 @@ class DV3App:
         # Current emotion for visualizer
         self._current_emotion: str = ""
 
-        # Pygame surface
-        self._screen: Optional[pygame.Surface] = None
+        # Pygame surface (only used with --pygame)
+        self._screen = None
 
     # ------------------------------------------------------------------
     # Setup
@@ -311,37 +322,37 @@ class DV3App:
     async def setup(self) -> None:
         """Initialize all subsystems.
 
-        Must be called before run(). Initializes Pygame (main thread),
-        loads animations, starts wake word detector.
+        Must be called before run(). In headless mode (default) only the
+        WS server, voice pipeline, and wake word detector are started.
+        Pass ``--pygame`` to enable the legacy Pygame display.
         """
         logger.info("=== DV3 Voice Companion starting ===")
+        logger.info("Mode: %s", "pygame" if self._use_pygame else "headless (web visualizer)")
 
-        # ---- Visualizer (Pygame -- must be main thread) ----
         vis_cfg = self.config.get("visualizer", {})
 
-        from visualizer.display import DisplayManager
-        self.display = DisplayManager(vis_cfg)
-        self._screen = self.display.init_display()
+        # ---- Pygame display (only with --pygame) ----
+        if self._use_pygame:
+            from visualizer.display import DisplayManager
+            self.display = DisplayManager(vis_cfg)
+            self._screen = self.display.init_display()
 
-        from visualizer.animation_engine import AnimationEngine
-        self.animation_engine = AnimationEngine(vis_cfg)
+            from visualizer.animation_engine import AnimationEngine
+            self.animation_engine = AnimationEngine(vis_cfg)
 
-        self._grad_cfg = vis_cfg.get("gradient", {})
-        from visualizer.gradient_overlay import GradientOverlay
-        # Gradient and target size are set after loading the initial
-        # animation so they match the actual animation aspect ratio,
-        # not the screen aspect ratio.
-        self.gradient: Optional[GradientOverlay] = None
-        self._GradientOverlay = GradientOverlay
+            self._grad_cfg = vis_cfg.get("gradient", {})
+            from visualizer.gradient_overlay import GradientOverlay
+            self.gradient = None
+            self._GradientOverlay = GradientOverlay
 
-        # ---- Emotion mapper (manifest-only) ----
+        # ---- Emotion mapper (manifest-only, needed for WS events too) ----
         from visualizer.emotion_map import EmotionMapper
         manifest_path = PROJECT_ROOT / "animations" / "manifest.json"
         self.emotion_mapper = EmotionMapper(str(manifest_path))
         if self.emotion_mapper.asset_count() == 0:
             logger.warning(
                 "No animations loaded — manifest missing or empty at %s. "
-                "Tag animations in the WebPew editor and save to populate it.",
+                "Tag animations in the editor and save to populate it.",
                 manifest_path,
             )
 
@@ -351,15 +362,15 @@ class DV3App:
         await self.ws_server.start()
         logger.info("Visualizer WS server started on port %d", ws_port)
 
-        # ---- Load initial (neutral) animation ----
+        # ---- Load initial (neutral) animation / emit initial event ----
         self._set_emotion("neutral", crossfade=False)
-        if self.animation_engine._animation is not None:
+        if self._use_pygame and self.animation_engine._animation is not None:
             logger.info(
                 "Initial animation loaded: %s (%d frames)",
                 self.animation_engine._animation.path,
                 self.animation_engine._animation.frame_count,
             )
-        else:
+        elif self._use_pygame:
             logger.warning("No initial animation loaded — display will be black")
 
         # ---- Emotion parser ----
@@ -384,13 +395,20 @@ class DV3App:
         # ---- Wake word detector ----
         from core.wake_word import WakeWordDetector
         config_path = str(PROJECT_ROOT / "config" / "settings.yaml")
+        # In headless mode, feed browser mic audio (from WS) into wake word
+        ext_queue = self.ws_server.audio_in_queue if not self._use_pygame else None
         self.wake_word = WakeWordDetector(
             config_path=config_path,
             on_detected=self._on_wake_word_detected,
+            external_audio_queue=ext_queue,
         )
 
-        # ---- Audio output (sounddevice) ----
-        self._setup_audio_output()
+        # ---- Audio output ----
+        if self._use_pygame:
+            self._setup_audio_output()
+        else:
+            # Headless: TTS audio goes out via WS to the browser
+            logger.info("Audio output: WebSocket (browser playback)")
 
         logger.info("=== Setup complete ===")
 
@@ -470,37 +488,37 @@ class DV3App:
             await self._shutdown()
 
     async def _main_loop(self) -> None:
-        """Pygame render loop running in the main thread.
+        """Main event loop.
 
-        Pumps Pygame events, renders the current animation frame, and
-        yields to asyncio between frames so background tasks can run.
+        In headless mode, simply yields to asyncio so background tasks
+        (wake word, conversation, tool dispatch) can run.  With --pygame,
+        also pumps the Pygame render loop.
         """
         while not self._shutdown_event.is_set():
-            # ---- Pygame event pump ----
-            if self.display.should_quit():
-                logger.info("Quit requested via Pygame event")
-                self._shutdown_event.set()
-                break
+            if self._use_pygame:
+                # ---- Pygame event pump ----
+                if self.display.should_quit():
+                    logger.info("Quit requested via Pygame event")
+                    self._shutdown_event.set()
+                    break
 
-            # ---- Update animation ----
-            dt = self.display.tick()
-            if self.animation_engine is not None:
-                self.animation_engine.update(dt)
-                frame = self.animation_engine.get_current_frame()
+                # ---- Update animation ----
+                dt = self.display.tick()
+                if self.animation_engine is not None:
+                    self.animation_engine.update(dt)
+                    frame = self.animation_engine.get_current_frame()
 
-                if frame is not None and self.gradient is not None:
-                    gradient_surf = self.gradient.get_surface()
-                    self.display.render_frame(
-                        self._screen, frame, gradient_surf
-                    )
+                    if frame is not None and self.gradient is not None:
+                        gradient_surf = self.gradient.get_surface()
+                        self.display.render_frame(
+                            self._screen, frame, gradient_surf
+                        )
 
-            pygame.display.flip()
-
-            # ---- Yield to asyncio ----
-            # This is the critical bridge: we yield control so that
-            # background tasks (wake word, conversation, tool dispatch)
-            # can make progress between rendered frames.
-            await asyncio.sleep(0)
+                pygame.display.flip()
+                await asyncio.sleep(0)
+            else:
+                # Headless — just keep the event loop alive
+                await asyncio.sleep(0.05)
 
     # ------------------------------------------------------------------
     # State transitions
@@ -685,6 +703,20 @@ class DV3App:
 
         audio_queue = self.wake_word._audio_queue
 
+        # Drain stale audio that accumulated during pipeline connection.
+        # These are old chunks (silence, tail of wake word) that would
+        # confuse Gemini if sent as a burst.
+        drained = 0
+        while not audio_queue.empty():
+            try:
+                audio_queue.get_nowait()
+                drained += 1
+            except asyncio.QueueEmpty:
+                break
+        if drained:
+            logger.debug("Drained %d stale audio chunks before mic streaming", drained)
+
+        chunks_sent = 0
         while (
             not self._shutdown_event.is_set()
             and self.state == STATE_CONVERSATION
@@ -703,6 +735,13 @@ class DV3App:
 
             try:
                 await self.pipeline.send_audio(pcm_bytes)
+                chunks_sent += 1
+                if chunks_sent <= 3 or chunks_sent % 50 == 0:
+                    logger.debug(
+                        "Sent audio chunk #%d to Gemini (%d bytes, rms=%.4f)",
+                        chunks_sent, len(pcm_bytes),
+                        np.sqrt(np.mean(chunk_f32 ** 2)),
+                    )
             except ConnectionError:
                 logger.warning("Pipeline disconnected during mic streaming")
                 break
@@ -710,16 +749,19 @@ class DV3App:
                 logger.exception("Error sending audio to pipeline")
                 break
 
+        logger.debug("Mic stream loop ended (sent %d chunks total)", chunks_sent)
+
     async def _audio_receive_loop(self) -> None:
         """Receive and play audio responses from Gemini.
 
-        Reads PCM chunks from the pipeline's audio iterator and writes
-        them to the sounddevice output stream.  Completes when the
-        pipeline signals end of turn.
+        In headless mode, sends PCM chunks to the browser via WebSocket.
+        With --pygame, writes to the sounddevice output stream.
         """
-        if self._audio_output_stream is None:
-            logger.warning("No audio output stream; skipping audio playback")
-            # Still consume from the iterator so it does not block
+        use_ws = not self._use_pygame and self.ws_server is not None
+        use_sd = self._audio_output_stream is not None
+
+        if not use_ws and not use_sd:
+            logger.warning("No audio output available; consuming silently")
             async for _chunk in self.pipeline.receive_audio():
                 pass
             return
@@ -729,9 +771,12 @@ class DV3App:
                 if self._shutdown_event.is_set():
                     break
                 try:
-                    self._audio_output_stream.write(chunk)
+                    if use_ws:
+                        await self.ws_server.send_audio(chunk)
+                    elif use_sd:
+                        self._audio_output_stream.write(chunk)
                 except Exception:
-                    logger.exception("Error writing to audio output")
+                    logger.exception("Error writing audio output")
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -821,64 +866,58 @@ class DV3App:
     def _set_emotion(self, emotion: str, *, crossfade: bool = True) -> None:
         """Update the visualizer to display an animation for *emotion*.
 
-        Args:
-            emotion: Emotion string (e.g. "happy", "neutral").
-            crossfade: Whether to crossfade from the current animation
-                or switch instantly.
+        In headless mode, emits the emotion via WebSocket so the web
+        visualizer handles rendering.  With --pygame, also loads the
+        Pygame animation.
         """
         if emotion == self._current_emotion and not crossfade:
             return
 
         self._current_emotion = emotion
 
-        # Resolve emotion to an animation file path
-        anim_path = self._resolve_animation_path(emotion)
-        if anim_path is None:
-            logger.warning(
-                "No animation file for emotion '%s'; keeping current",
-                emotion,
-            )
-            return
+        # ---- Pygame animation (only with --pygame) ----
+        if self._use_pygame and self.animation_engine is not None:
+            anim_path = self._resolve_animation_path(emotion)
+            if anim_path is None:
+                logger.warning(
+                    "No animation file for emotion '%s'; keeping current",
+                    emotion,
+                )
+            else:
+                try:
+                    animation = self.animation_engine.load_animation(anim_path)
+                except (FileNotFoundError, ValueError) as exc:
+                    logger.error("Failed to load animation %s: %s", anim_path, exc)
+                    animation = None
 
-        try:
-            animation = self.animation_engine.load_animation(anim_path)
-        except (FileNotFoundError, ValueError) as exc:
-            logger.error("Failed to load animation %s: %s", anim_path, exc)
-            return
+                if animation is not None:
+                    if self.gradient is None and animation.frames:
+                        native_size = animation.frames[0].size
+                        anim_rect = self.display.get_animation_rect(native_size)
+                        self.animation_engine.set_target_size(
+                            (anim_rect.width, anim_rect.height)
+                        )
+                        self.gradient = self._GradientOverlay(
+                            size=(anim_rect.width, anim_rect.height),
+                            opacity=self._grad_cfg.get("opacity", 60),
+                            gradient_size=self._grad_cfg.get("size", 70),
+                        )
+                        logger.info(
+                            "Animation target: %dx%d (from %dx%d source)",
+                            anim_rect.width, anim_rect.height,
+                            native_size[0], native_size[1],
+                        )
 
-        # On first animation load, set up the target size and gradient
-        # based on the actual animation aspect ratio (not the screen's).
-        if self.gradient is None and animation.frames:
-            native_size = animation.frames[0].size  # (w, h) from PIL
-            anim_rect = self.display.get_animation_rect(native_size)
-            self.animation_engine.set_target_size(
-                (anim_rect.width, anim_rect.height)
-            )
-            self.gradient = self._GradientOverlay(
-                size=(anim_rect.width, anim_rect.height),
-                opacity=self._grad_cfg.get("opacity", 60),
-                gradient_size=self._grad_cfg.get("size", 70),
-            )
-            logger.info(
-                "Animation target: %dx%d (from %dx%d source)",
-                anim_rect.width, anim_rect.height,
-                native_size[0], native_size[1],
-            )
+                    if crossfade:
+                        self.animation_engine.crossfade_to(animation)
+                    else:
+                        self.animation_engine.set_animation(animation)
 
-        if crossfade:
-            self.animation_engine.crossfade_to(animation)
-        else:
-            self.animation_engine.set_animation(animation)
-
+        # ---- WebSocket event (always) ----
         if self.ws_server:
             asyncio.create_task(self.ws_server.emit_emotion(emotion, theme="dark"))
 
-        logger.debug(
-            "Animation set for emotion '%s': %s (crossfade=%s)",
-            emotion,
-            anim_path,
-            crossfade,
-        )
+        logger.debug("Emotion set: '%s' (crossfade=%s)", emotion, crossfade)
 
     def _resolve_animation_path(self, emotion: str) -> Optional[str]:
         """Resolve an emotion string to an animation file path.
@@ -949,8 +988,8 @@ class DV3App:
                 logger.exception("Error stopping WebSocket server")
             self.ws_server = None
 
-        # Cleanup Pygame display
-        if self.display is not None:
+        # Cleanup Pygame display (only with --pygame)
+        if self._use_pygame and self.display is not None:
             self.display.cleanup()
 
         logger.info("=== DV3 shutdown complete ===")
@@ -972,9 +1011,14 @@ def parse_args() -> argparse.Namespace:
         help="Enable debug-level logging",
     )
     parser.add_argument(
+        "--pygame",
+        action="store_true",
+        help="Enable legacy Pygame display (default: headless, web visualizer only)",
+    )
+    parser.add_argument(
         "--windowed",
         action="store_true",
-        help="Force windowed display (override fullscreen setting)",
+        help="Force windowed Pygame display (implies --pygame)",
     )
     return parser.parse_args()
 
@@ -984,6 +1028,8 @@ def main() -> None:
     args = parse_args()
     _configure_logging(debug=args.debug)
 
+    use_pygame = args.pygame or args.windowed
+
     # Build config with CLI overrides
     overrides: dict = {}
     if args.windowed:
@@ -991,12 +1037,11 @@ def main() -> None:
 
     config = load_config(overrides=overrides)
 
-    # Apply CLI overrides into nested config properly
     if args.windowed:
         vis = config.setdefault("visualizer", {})
         vis["fullscreen"] = False
 
-    app = DV3App(config)
+    app = DV3App(config, use_pygame=use_pygame)
 
     try:
         asyncio.run(app.run())

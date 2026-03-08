@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { AnimationPlayer } from './components/AnimationPlayer';
 import { loadManifest, buildIndex, pickAnimation } from './lib/manifest';
 import { VisualizerWSClient } from './lib/wsClient';
+import { AudioClient } from './lib/audioClient';
 import type { AnimationIndex, VisualizerEvent } from './lib/manifest';
 import './index.css';
 
@@ -40,10 +41,12 @@ export default function App() {
   const [currentSrc, setCurrentSrc] = useState<string | null>(null);
   const [status, setStatus] = useState('Loading...');
   const [wsConnected, setWsConnected] = useState(false);
+  const [micActive, setMicActive] = useState(false);
   const [config, setConfig] = useState<VisualizerConfig>(DEFAULT_CONFIG);
   const [showSettings, setShowSettings] = useState(false);
   const indexRef = useRef<AnimationIndex | null>(null);
   const clientRef = useRef<VisualizerWSClient | null>(null);
+  const audioRef = useRef<AudioClient | null>(null);
   const lastEmotionRef = useRef<string>('neutral');
   const currentSrcRef = useRef<string | null>(null);
   const contextualTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -109,6 +112,24 @@ export default function App() {
     }
   }, [stopIdleRotation, updateSrc]);
 
+  // Start mic capture when WS connects
+  const startMic = useCallback(() => {
+    const client = clientRef.current;
+    if (!client?.connected) return;
+
+    if (!audioRef.current) {
+      audioRef.current = new AudioClient();
+    }
+
+    audioRef.current
+      .startCapture((data) => client.sendBinary(data))
+      .then(() => setMicActive(true))
+      .catch((err) => {
+        console.error('[App] Failed to start mic:', err);
+        setMicActive(false);
+      });
+  }, []);
+
   useEffect(() => {
     Promise.all([loadConfig(), loadManifest()]).then(([cfg, manifest]) => {
       setConfig(cfg);
@@ -128,15 +149,27 @@ export default function App() {
 
       startIdleRotation(cfg);
 
+      const audio = new AudioClient();
+      audioRef.current = audio;
+
       const client = new VisualizerWSClient({
         url: cfg.wsUrl,
         onEvent: (event) => handleEvent(event, cfg),
+        onAudio: (pcm) => audio.playAudio(pcm),
         onConnect: () => {
           setWsConnected(true);
           stopIdleRotation();
+          // Auto-start mic capture on WS connect
+          audio
+            .startCapture((data) => client.sendBinary(data))
+            .then(() => setMicActive(true))
+            .catch(() => setMicActive(false));
         },
         onDisconnect: () => {
           setWsConnected(false);
+          setMicActive(false);
+          audio.stopCapture();
+          audio.resetPlayback();
           startIdleRotation(cfg);
         },
       });
@@ -145,11 +178,12 @@ export default function App() {
     }).catch(() => setStatus('Failed to load manifest'));
 
     return () => {
+      audioRef.current?.stopCapture();
       clientRef.current?.disconnect();
       if (contextualTimerRef.current) clearTimeout(contextualTimerRef.current);
       if (idleTimerRef.current) clearInterval(idleTimerRef.current);
     };
-  }, [handleEvent, startIdleRotation, stopIdleRotation, updateSrc]);
+  }, [handleEvent, startIdleRotation, stopIdleRotation, updateSrc, startMic]);
 
   // Toggle settings with 'S' key
   useEffect(() => {
@@ -175,13 +209,25 @@ export default function App() {
         </div>
       )}
       {/* Status indicator */}
-      <div className="absolute top-3 right-3 pointer-events-none flex items-center gap-1.5 z-10">
-        <div className={`w-2 h-2 rounded-full ${
-          wsConnected ? 'bg-green-400' : 'bg-white/10'
-        }`} />
-        <span className="text-white/10 text-xs font-mono">
-          {wsConnected ? 'live' : 'idle'}
-        </span>
+      <div className="absolute top-3 right-3 pointer-events-none flex items-center gap-2 z-10">
+        {/* Mic indicator */}
+        <div className="flex items-center gap-1">
+          <div className={`w-2 h-2 rounded-full ${
+            micActive ? 'bg-red-400 animate-pulse' : 'bg-white/10'
+          }`} />
+          <span className="text-white/10 text-xs font-mono">
+            {micActive ? 'mic' : ''}
+          </span>
+        </div>
+        {/* WS indicator */}
+        <div className="flex items-center gap-1">
+          <div className={`w-2 h-2 rounded-full ${
+            wsConnected ? 'bg-green-400' : 'bg-white/10'
+          }`} />
+          <span className="text-white/10 text-xs font-mono">
+            {wsConnected ? 'live' : 'idle'}
+          </span>
+        </div>
       </div>
       {/* Settings panel — toggle with S key */}
       {showSettings && (

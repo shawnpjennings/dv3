@@ -138,7 +138,7 @@ TOOL_DECLARATIONS = [
     {"google_search": {}},
 ]
 
-AUDIO_MIME_TYPE = "audio/pcm;rate=16000"
+AUDIO_MIME_TYPE = "audio/pcm"
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +492,11 @@ class GeminiLivePipeline(VoicePipelineBase):
 
         except Exception as exc:
             if self._connected:
-                logger.error("Receive loop error: %s", exc)
+                logger.error(
+                    "Receive loop error: %s (type=%s)",
+                    exc,
+                    type(exc).__name__,
+                )
                 await self._handle_disconnect(exc)
             return
 
@@ -562,12 +566,11 @@ class GeminiLivePipeline(VoicePipelineBase):
                 await self._text_out_queue.put(text)
                 await self.text_queue.put(text)
 
-            # Turn complete signal.
+            # Turn complete signal — do NOT put None sentinels here.
+            # The conversation is multi-turn; iterators should keep
+            # running until the pipeline disconnects or stop() is called.
             if sc.turn_complete:
                 logger.debug("Server turn complete")
-                # Sentinel so iterators for this turn can finish.
-                await self._audio_out_queue.put(None)
-                await self._text_out_queue.put(None)
 
             # Interrupted -- the user started speaking mid-response.
             if sc.interrupted:

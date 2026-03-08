@@ -106,8 +106,10 @@ class WakeWordDetector:
         self,
         config_path: str = "config/settings.yaml",
         on_detected: Optional[Callable[[float], None]] = None,
+        external_audio_queue: Optional[asyncio.Queue] = None,
     ) -> None:
         self.on_detected = on_detected
+        self._external_audio_queue = external_audio_queue
 
         # ── Load configuration ──────────────────────────────────────────
         cfg = self._load_config(config_path)
@@ -122,7 +124,12 @@ class WakeWordDetector:
         self._configured_device = audio_cfg.get("input_device")  # None = auto
 
         # ── Runtime state ───────────────────────────────────────────────
-        self._audio_queue: asyncio.Queue[np.ndarray] = asyncio.Queue()
+        # Use external queue (e.g. from browser WS) if provided,
+        # otherwise create our own for sounddevice to fill.
+        self._audio_queue: asyncio.Queue[np.ndarray] = (
+            external_audio_queue if external_audio_queue is not None
+            else asyncio.Queue()
+        )
         self._stream = None  # sounddevice.InputStream
         self._model = None  # openwakeword Model
         self._running: bool = False
@@ -183,8 +190,11 @@ class WakeWordDetector:
         )
         logger.info("OpenWakeWord model loaded from %s", model_file)
 
-        # ── Open audio stream (threaded with timeout) ───────────────────
-        self._open_audio_stream()
+        # ── Open audio stream ────────────────────────────────────────────
+        if self._external_audio_queue is not None:
+            logger.info("Using external audio queue (browser mic via WebSocket)")
+        else:
+            self._open_audio_stream()
         self._running = True
         logger.info("WakeWordDetector started — listening for wake word")
 

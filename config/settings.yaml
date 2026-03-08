@@ -12,7 +12,8 @@ wake_word:
 voice:
   backend: "gemini_live"  # "gemini_live" or "modular"
   model: "gemini-2.5-flash-native-audio-latest"
-  sample_rate: 16000
+  input_sample_rate: 16000   # mic audio sent to Gemini
+  output_sample_rate: 24000  # TTS audio from Gemini native audio models
   channels: 1
   audio_format: "int16"
   reconnect_max_retries: 5
