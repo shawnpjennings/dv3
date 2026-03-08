@@ -736,8 +736,8 @@ function AppContent() {
               activeAsset={(activeInboxAsset ?? activeAsset)!}
               onUndo={handleUndo}
               onRedo={handleRedo}
-              onDuplicate={activeInboxAsset ? () => {} : handleDuplicate}
-              onDelete={activeInboxAsset ? () => {} : () => handleDeleteAsset(activeAsset!.id)}
+              onDuplicate={activeInboxAsset ? handleDuplicateInbox : handleDuplicate}
+              onDelete={activeInboxAsset ? handleDeleteInbox : () => handleDeleteAsset(activeAsset!.id)}
             />
             <EditorPanel
               activeAsset={(activeInboxAsset ?? activeAsset)!}
