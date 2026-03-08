@@ -39,6 +39,9 @@ class VisualizerWSServer:
         # (same format as wake_word._audio_queue for drop-in compatibility).
         self.audio_in_queue: asyncio.Queue[np.ndarray] = asyncio.Queue(maxsize=200)
         self._audio_chunk_count = 0
+        # Only accept mic audio from one client (first to connect).
+        # Prevents doubling from React StrictMode dual connections.
+        self._audio_source_ws: Optional[web.WebSocketResponse] = None
 
     async def start(self) -> None:
         self._runner = web.AppRunner(self._app)
@@ -106,12 +109,20 @@ class VisualizerWSServer:
         ws = web.WebSocketResponse(max_msg_size=1024 * 1024)
         await ws.prepare(request)
         self._clients.add(ws)
-        logger.debug("Visualizer client connected (%d total)", len(self._clients))
+        # First client to connect becomes the audio source
+        is_audio_source = self._audio_source_ws is None
+        if is_audio_source:
+            self._audio_source_ws = ws
+        logger.debug(
+            "Visualizer client connected (%d total, audio_source=%s)",
+            len(self._clients), is_audio_source,
+        )
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.BINARY:
-                    # Browser mic audio: raw PCM int16, 16 kHz mono
-                    self._handle_audio_in(msg.data)
+                    # Only accept mic audio from the designated source
+                    if ws is self._audio_source_ws:
+                        self._handle_audio_in(msg.data)
                 elif msg.type == WSMsgType.TEXT:
                     # Could be JSON commands from browser in the future
                     pass
@@ -119,6 +130,8 @@ class VisualizerWSServer:
                     break
         finally:
             self._clients.discard(ws)
+            if ws is self._audio_source_ws:
+                self._audio_source_ws = None
             logger.debug("Visualizer client disconnected (%d remaining)", len(self._clients))
         return ws
 
