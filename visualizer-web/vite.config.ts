@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     port: 5175,
     fs: {
-      allow: ['.', path.resolve(__dirname, '../data/animations')],
+      allow: ['.', path.resolve(__dirname, '../animations')],
     },
   },
 });

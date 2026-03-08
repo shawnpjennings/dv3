@@ -15,3 +15,18 @@ build/
 .cache/
 *Zone.Identifier
 *.lnk
+
+# Animation assets (binary, managed via manifest.json)
+animations/
+editor-web/data/
+
+# Debug screenshots
+visualizer-*.png
+
+# Playwright artifacts
+editor-web/test-results/
+.playwright-mcp/
+
+# IDE / Claude Code
+.claude/
+NUL

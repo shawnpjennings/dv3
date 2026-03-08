@@ -12,6 +12,7 @@ export class VisualizerWSClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
   private stopped = false;
+  private wasConnected = false;
   private options: WSClientOptions;
 
   constructor(options: WSClientOptions) {
@@ -36,6 +37,7 @@ export class VisualizerWSClient {
       this.ws = new WebSocket(this.options.url);
       this.ws.onopen = () => {
         this.reconnectDelay = 1000; // reset backoff
+        this.wasConnected = true;
         this.options.onConnect?.();
       };
       this.ws.onmessage = (evt) => {
@@ -47,7 +49,11 @@ export class VisualizerWSClient {
         }
       };
       this.ws.onclose = () => {
-        this.options.onDisconnect?.();
+        // Only notify disconnect if we had a successful connection before
+        if (this.wasConnected) {
+          this.wasConnected = false;
+          this.options.onDisconnect?.();
+        }
         if (!this.stopped) {
           // Exponential backoff, max 10s
           this.reconnectTimer = setTimeout(() => this._connect(), this.reconnectDelay);

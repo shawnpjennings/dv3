@@ -1,0 +1,9 @@
+{
+  "animationSizePercent": 65,
+  "gradientOpacity": 85,
+  "gradientSize": 50,
+  "crossfadeDurationMs": 300,
+  "contextualDurationMs": 8000,
+  "idleRotationMs": 12000,
+  "wsUrl": "ws://localhost:8765/ws"
+}

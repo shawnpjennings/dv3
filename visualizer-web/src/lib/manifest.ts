@@ -24,14 +24,16 @@ export type VisualizerEvent =
   | { type: 'state'; state: string; theme?: string }
   | { type: 'tag'; tag: string };
 
+const ANIMATIONS_BASE = '/@fs/home/shawn/projects/dv3/animations';
+
 /** Resolve a manifest filename to a URL the browser can load via Vite's fs.allow */
 export function assetUrl(filename: string): string {
-  return `/@fs/home/shawn/projects/dv3/data/animations/${filename}`;
+  return `${ANIMATIONS_BASE}/${filename}`;
 }
 
 export async function loadManifest(): Promise<Manifest | null> {
   try {
-    const res = await fetch(assetUrl('manifest.json'));
+    const res = await fetch(`${ANIMATIONS_BASE}/manifest.json`);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -57,7 +59,11 @@ export function buildIndex(manifest: Manifest, theme: 'dark' | 'light' = 'dark')
   return { byEmotion, byState, byTag, all };
 }
 
-export function pickAnimation(index: AnimationIndex, event: VisualizerEvent): string | null {
+export function pickAnimation(
+  index: AnimationIndex,
+  event: VisualizerEvent,
+  exclude?: string | null,
+): string | null {
   let pool: string[] = [];
   if (event.type === 'emotion') {
     pool = index.byEmotion[event.emotion] ?? index.byEmotion['neutral'] ?? index.all;
@@ -67,5 +73,9 @@ export function pickAnimation(index: AnimationIndex, event: VisualizerEvent): st
     pool = index.byTag[event.tag] ?? index.all;
   }
   if (pool.length === 0) return null;
+  // Avoid repeating the same animation when possible
+  if (exclude && pool.length > 1) {
+    pool = pool.filter((u) => u !== exclude);
+  }
   return pool[Math.floor(Math.random() * pool.length)];
 }

@@ -3,21 +3,21 @@ import { useState, useEffect } from 'react';
 
 interface Props {
   src: string | null;
-  /** Animation height as % of viewport height (default 45) */
+  /** Animation height as % of viewport height (default 65) */
   sizePercent?: number;
-  /** Radial gradient opacity 0-1 (default 0.92) */
+  /** Edge opacity 0-100 — how opaque the black edges are (default 85) */
   gradientOpacity?: number;
-  /** How far the transparent center extends as % of animation area (default 55) */
-  gradientReach?: number;
+  /** How far inward the gradient reaches, % of animation area (default 70) */
+  gradientSize?: number;
   /** Crossfade duration ms (default 300) */
   fadeDuration?: number;
 }
 
 export const AnimationPlayer: React.FC<Props> = ({
   src,
-  sizePercent = 45,
-  gradientOpacity = 0.92,
-  gradientReach = 55,
+  sizePercent = 65,
+  gradientOpacity = 85,
+  gradientSize = 70,
   fadeDuration = 300,
 }) => {
   const [currentSrc, setCurrentSrc] = useState<string | null>(src);
@@ -38,8 +38,27 @@ export const AnimationPlayer: React.FC<Props> = ({
   }, [src, fadeDuration]);
 
   const size = `${sizePercent}vh`;
-  // Radial gradient: transparent ellipse in center, black at edges
-  const gradient = `radial-gradient(ellipse ${size} ${size} at center, transparent 0%, transparent ${gradientReach}%, rgba(0,0,0,${gradientOpacity}) 100%)`;
+
+  // Match the Pygame GradientOverlay logic:
+  // - gradientSize controls how far inward the fade reaches (0-100)
+  //   At 100 the entire surface fades; at 0 only the very edge is darkened.
+  // - gradientOpacity controls peak edge alpha (0-100)
+  //
+  // The "inner" ellipse (fully transparent) shrinks as gradientSize increases.
+  // innerRadius = 50% * (1 - gradientSize/100) of the element
+  // At gradientSize=70: inner = 50% * 0.3 = 15% — so transparent from 0-15%, fading 15-50%
+  const maxAlpha = gradientOpacity / 100;
+  const innerPct = 50 * (1 - gradientSize / 100); // % from center where fade starts
+
+  // Build gradient on the animation-sized overlay (not fullscreen)
+  // This sits directly on top of the animation img and masks its edges
+  const animGradient = [
+    `radial-gradient(ellipse 50% 50% at center,`,
+    `transparent ${innerPct}%,`,
+    `rgba(0,0,0,${(maxAlpha * 0.3).toFixed(3)}) ${innerPct + (50 - innerPct) * 0.3}%,`,
+    `rgba(0,0,0,${(maxAlpha * 0.6).toFixed(3)}) ${innerPct + (50 - innerPct) * 0.6}%,`,
+    `rgba(0,0,0,${maxAlpha.toFixed(3)}) 50%)`,
+  ].join(' ');
 
   return (
     <div className="relative w-full h-full" style={{ background: '#000' }}>
@@ -73,10 +92,14 @@ export const AnimationPlayer: React.FC<Props> = ({
           }}
         />
       )}
-      {/* Fullscreen gradient mask — transparent center, black edges */}
+      {/* Gradient overlay — sized to animation area, covers edges/watermarks */}
       <div
-        className="absolute inset-0 pointer-events-none"
-        style={{ background: gradient }}
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+        style={{
+          width: size,
+          height: size,
+          background: animGradient,
+        }}
       />
     </div>
   );
