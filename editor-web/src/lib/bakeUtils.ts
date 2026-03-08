@@ -391,9 +391,10 @@ export async function bakeAndSave(
   }
 
   // -------------------------------------------------------------------------
-  // 2. Write baked WebP to data/animations/{outName}
+  // 2. Write baked WebP to data/animations/library/{outName}
   // -------------------------------------------------------------------------
-  const fileHandle = await animationsHandle.getFileHandle(outName, { create: true });
+  const libraryHandle = await animationsHandle.getDirectoryHandle('library', { create: true });
+  const fileHandle = await libraryHandle.getFileHandle(outName, { create: true });
   const writable = await fileHandle.createWritable();
   await writable.write(new Blob([bakedBytes.buffer as ArrayBuffer], { type: 'image/webp' }));
   await writable.close();
@@ -415,7 +416,7 @@ export async function bakeAndSave(
   // 4. Build/update manifest entry
   // -------------------------------------------------------------------------
   const newEntry: LibraryAsset = {
-    file: outName,
+    file: `library/${outName}`,
     theme: payload.theme,
     emotions: payload.emotions,
     states: payload.states,
@@ -424,7 +425,7 @@ export async function bakeAndSave(
     notes: payload.notes,
   };
 
-  const idx = manifest.assets.findIndex(a => a.file === outName);
+  const idx = manifest.assets.findIndex(a => a.file === `library/${outName}`);
   if (idx >= 0) {
     manifest.assets[idx] = newEntry;
   } else {
