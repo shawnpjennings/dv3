@@ -285,13 +285,14 @@ const buildFilters = (item: InboxItem, sourceIsAnimated: boolean): string[] => {
  *
  * @param item             The InboxItem to bake.
  * @param payload          Tag/filename data from the TagPanel.
- * @param animationsHandle FileSystemDirectoryHandle pointing at
- *                         animations/ (the root the user connected).
+ * @param animationsHandle Optional FileSystemDirectoryHandle.  When null
+ *                         the dev server API is used instead (no folder
+ *                         picker required).
  */
 export async function bakeAndSave(
   item: InboxItem,
   payload: SavePayload,
-  animationsHandle: FileSystemDirectoryHandle,
+  animationsHandle: FileSystemDirectoryHandle | null,
 ): Promise<LibraryAsset> {
 
   const outName = payload.filename.endsWith('.webp')
@@ -432,27 +433,45 @@ export async function bakeAndSave(
   // -------------------------------------------------------------------------
   // 2. Write baked WebP to animations/library/{outName}
   // -------------------------------------------------------------------------
-  try {
-    const libraryHandle = await animationsHandle.getDirectoryHandle('library', { create: true });
-    const fileHandle = await libraryHandle.getFileHandle(outName, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(new Blob([bakedBytes.buffer as ArrayBuffer], { type: 'image/webp' }));
-    await writable.close();
-  } catch (err) {
-    throw new Error(`[write-library] ${err instanceof Error ? err.message : err}`);
+  if (animationsHandle) {
+    try {
+      const libraryHandle = await animationsHandle.getDirectoryHandle('library', { create: true });
+      const fileHandle = await libraryHandle.getFileHandle(outName, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(new Blob([bakedBytes.buffer as ArrayBuffer], { type: 'image/webp' }));
+      await writable.close();
+    } catch (err) {
+      throw new Error(`[write-library] ${err instanceof Error ? err.message : err}`);
+    }
+  } else {
+    const res = await fetch(`/api/write-file?path=library/${encodeURIComponent(outName)}`, {
+      method: 'POST',
+      body: bakedBytes,
+    });
+    if (!res.ok) throw new Error(`[write-library] Server write failed: ${res.status}`);
   }
 
   // -------------------------------------------------------------------------
   // 3. Read existing manifest.json (or start fresh)
   // -------------------------------------------------------------------------
   let manifest: Manifest = { version: 1, assets: [] };
-  try {
-    const mh = await animationsHandle.getFileHandle('manifest.json');
-    const mf = await mh.getFile();
-    manifest = JSON.parse(await mf.text()) as Manifest;
-    if (!Array.isArray(manifest.assets)) manifest.assets = [];
-  } catch {
-    // First run — manifest doesn't exist yet, use the empty default above.
+  if (animationsHandle) {
+    try {
+      const mh = await animationsHandle.getFileHandle('manifest.json');
+      const mf = await mh.getFile();
+      manifest = JSON.parse(await mf.text()) as Manifest;
+      if (!Array.isArray(manifest.assets)) manifest.assets = [];
+    } catch {
+      // First run — manifest doesn't exist yet, use the empty default above.
+    }
+  } else {
+    try {
+      const res = await fetch('/@fs' + '/home/shawn/projects/dv3/animations/manifest.json');
+      if (res.ok) {
+        manifest = await res.json();
+        if (!Array.isArray(manifest.assets)) manifest.assets = [];
+      }
+    } catch { /* use empty default */ }
   }
 
   // -------------------------------------------------------------------------
@@ -478,24 +497,41 @@ export async function bakeAndSave(
   // -------------------------------------------------------------------------
   // 5. Write manifest.json back
   // -------------------------------------------------------------------------
-  try {
-    const manifestHandle = await animationsHandle.getFileHandle('manifest.json', { create: true });
-    const mWritable = await manifestHandle.createWritable();
+  if (animationsHandle) {
+    try {
+      const manifestHandle = await animationsHandle.getFileHandle('manifest.json', { create: true });
+      const mWritable = await manifestHandle.createWritable();
+      const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+      await mWritable.write(new Blob([manifestBytes.buffer as ArrayBuffer], { type: 'application/json' }));
+      await mWritable.close();
+    } catch (err) {
+      throw new Error(`[write-manifest] ${err instanceof Error ? err.message : err}`);
+    }
+  } else {
     const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
-    await mWritable.write(new Blob([manifestBytes.buffer as ArrayBuffer], { type: 'application/json' }));
-    await mWritable.close();
-  } catch (err) {
-    throw new Error(`[write-manifest] ${err instanceof Error ? err.message : err}`);
+    const res = await fetch('/api/write-file?path=manifest.json', {
+      method: 'POST',
+      body: manifestBytes,
+    });
+    if (!res.ok) throw new Error(`[write-manifest] Server write failed: ${res.status}`);
   }
 
   // -------------------------------------------------------------------------
   // 6. Delete inbox original (best-effort)
   // -------------------------------------------------------------------------
-  try {
-    const inboxHandle = await animationsHandle.getDirectoryHandle('inbox');
-    await inboxHandle.removeEntry(item.file.name);
-  } catch {
-    // inbox sub-dir may not exist, or file already removed — that's fine.
+  if (animationsHandle) {
+    try {
+      const inboxHandle = await animationsHandle.getDirectoryHandle('inbox');
+      await inboxHandle.removeEntry(item.file.name);
+    } catch {
+      // inbox sub-dir may not exist, or file already removed — that's fine.
+    }
+  } else {
+    try {
+      await fetch(`/api/delete-file?path=inbox/${encodeURIComponent(item.file.name)}`, {
+        method: 'DELETE',
+      });
+    } catch { /* best-effort */ }
   }
 
   // -------------------------------------------------------------------------

@@ -405,9 +405,9 @@ function AppContent() {
           // Remove from in-memory library assets
           setLibraryAssets(prev => prev.filter(a => a.file !== libraryFile));
 
-          // Update manifest.json on disk
-          if (dirHandle) {
-            try {
+          // Update manifest.json and delete file on disk
+          try {
+            if (dirHandle) {
               let manifest: Manifest = { version: 1, assets: [] };
               try {
                 const mh = await dirHandle.getFileHandle('manifest.json');
@@ -435,10 +435,25 @@ function AppContent() {
               } catch {
                 // File may already be gone
               }
-            } catch (err) {
-              console.error('Failed to update manifest on remove:', err);
-              addToast('Failed to remove from library on disk. The file may still exist.', 'error');
+            } else {
+              // Dev server API path
+              let manifest: Manifest = { version: 1, assets: [] };
+              try {
+                const res = await fetch('/@fs/home/shawn/projects/dv3/animations/manifest.json');
+                if (res.ok) {
+                  manifest = await res.json();
+                  if (!Array.isArray(manifest.assets)) manifest.assets = [];
+                }
+              } catch { /* use empty */ }
+
+              manifest.assets = manifest.assets.filter(a => a.file !== libraryFile);
+              const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+              await fetch('/api/write-file?path=manifest.json', { method: 'POST', body: manifestBytes });
+              await fetch(`/api/delete-file?path=${encodeURIComponent(libraryFile)}`, { method: 'DELETE' });
             }
+          } catch (err) {
+            console.error('Failed to update manifest on remove:', err);
+            addToast('Failed to remove from library on disk. The file may still exist.', 'error');
           }
         }
 
@@ -637,29 +652,39 @@ function AppContent() {
     setInboxItems(prev => [...prev, ...newItems]);
     if (!activeInboxId && newItems.length > 0) setActiveInboxId(newItems[0].id);
 
-    if (!dirHandle) return; // no folder selected yet — in-memory only
-
     setIsImporting(true);
     try {
-      const inboxDir = await getOrCreateInboxDir(dirHandle);
-      for (const item of newItems) {
-        if (item.type === 'image/gif') {
-          setImportStatus(`Converting ${item.name}...`);
-          const converted = await convertGifToInbox(item.file, inboxDir, (pct) => {
-            setImportStatus(`Converting ${item.name}... ${pct}%`);
-          });
-          URL.revokeObjectURL(item.previewUrl);
-          const newUrl = URL.createObjectURL(converted);
-          setInboxItems(prev =>
-            prev.map(i =>
-              i.id === item.id
-                ? { ...i, file: converted, previewUrl: newUrl, type: 'image/webp' }
-                : i
-            )
-          );
-        } else {
+      if (dirHandle) {
+        const inboxDir = await getOrCreateInboxDir(dirHandle);
+        for (const item of newItems) {
+          if (item.type === 'image/gif') {
+            setImportStatus(`Converting ${item.name}...`);
+            const converted = await convertGifToInbox(item.file, inboxDir, (pct) => {
+              setImportStatus(`Converting ${item.name}... ${pct}%`);
+            });
+            URL.revokeObjectURL(item.previewUrl);
+            const newUrl = URL.createObjectURL(converted);
+            setInboxItems(prev =>
+              prev.map(i =>
+                i.id === item.id
+                  ? { ...i, file: converted, previewUrl: newUrl, type: 'image/webp' }
+                  : i
+              )
+            );
+          } else {
+            setImportStatus(`Copying ${item.name}...`);
+            await copyWebPToInbox(item.file, inboxDir);
+          }
+        }
+      } else {
+        // Use dev server API — write imports to inbox/ on disk
+        for (const item of newItems) {
           setImportStatus(`Copying ${item.name}...`);
-          await copyWebPToInbox(item.file, inboxDir);
+          const bytes = new Uint8Array(await item.file.arrayBuffer());
+          await fetch(`/api/write-file?path=inbox/${encodeURIComponent(item.file.name)}`, {
+            method: 'POST',
+            body: bytes,
+          });
         }
       }
     } finally {
@@ -769,10 +794,6 @@ function AppContent() {
   const handleSave = async (payload: SavePayload) => {
     if (!activeInboxItem) {
       setSaveStatus('No file selected.');
-      return;
-    }
-    if (!dirHandle) {
-      setSaveStatus('no-folder');
       return;
     }
     setIsSaving(true);
