@@ -1,5 +1,5 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Asset, EditorSettings } from '../types';
@@ -174,7 +174,11 @@ export const executeBatchExport = async (
   if (!ffmpeg) {
     onProgress('Initializing FFmpeg engine...', 0);
     ffmpeg = new FFmpeg();
-    await ffmpeg.load();
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
   }
 
   const ff = ffmpeg;

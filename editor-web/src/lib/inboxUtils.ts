@@ -1,13 +1,18 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 let ffmpeg: FFmpeg | null = null;
 
 async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpeg) return ffmpeg;
-  ffmpeg = new FFmpeg();
-  await ffmpeg.load();
-  return ffmpeg;
+  const ff = new FFmpeg();
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+  await ff.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+  });
+  ffmpeg = ff;
+  return ff;
 }
 
 /**

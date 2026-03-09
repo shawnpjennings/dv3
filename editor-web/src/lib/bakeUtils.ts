@@ -8,14 +8,40 @@
  */
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import type { InboxItem, LibraryAsset, Manifest, SavePayload } from '../types';
 
 // ---------------------------------------------------------------------------
-// Module-level FFmpeg singleton (shared with exportUtils if loaded first, but
-// each module keeps its own ref — both lazy-initialise the same WASM binary).
+// Module-level FFmpeg singleton with auto-recovery.  If the Emscripten FS
+// gets into a bad state (stale files, failed CDN load, etc.), the instance
+// is destroyed and recreated on the next call.
 // ---------------------------------------------------------------------------
 let ffmpeg: FFmpeg | null = null;
+
+async function getOrCreateFFmpeg(): Promise<FFmpeg> {
+  if (ffmpeg) {
+    // Quick health check — if FS is corrupted this will throw ErrnoError
+    try {
+      await ffmpeg.writeFile('_healthcheck', new Uint8Array([0]));
+      await ffmpeg.deleteFile('_healthcheck');
+      return ffmpeg;
+    } catch {
+      console.warn('[bakeUtils] FFmpeg FS unhealthy — recreating instance');
+      try { ffmpeg.terminate(); } catch { /* best-effort */ }
+      ffmpeg = null;
+    }
+  }
+  const ff = new FFmpeg();
+  // Load core from CDN via blob URLs to satisfy COEP same-origin requirement.
+  // Without explicit URLs, load() may silently fail in COEP-enabled pages.
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+  await ff.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+  });
+  ffmpeg = ff;
+  return ff;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers (copied from exportUtils so bakeUtils stays self-contained)
@@ -284,12 +310,7 @@ export async function bakeAndSave(
     // Fast path: no edits — read original bytes directly.
     bakedBytes = new Uint8Array(await item.file.arrayBuffer());
   } else {
-    // Lazy-init FFmpeg.
-    if (!ffmpeg) {
-      ffmpeg = new FFmpeg();
-      await ffmpeg.load();
-    }
-    const ff = ffmpeg;
+    const ff = await getOrCreateFFmpeg();
 
     const ffmpegLogTail: string[] = [];
     ff.on('log', ({ message }: { message: string }) => {
