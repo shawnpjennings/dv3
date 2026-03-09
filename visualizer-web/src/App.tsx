@@ -66,22 +66,14 @@ export default function App() {
       if (!indexRef.current) return;
       const idx = indexRef.current;
 
-      // Prefer idle-appropriate animations: 50% idle state, 30% neutral emotion,
-      // 20% random emotion for variety.
+      // Idle rotation: 60% idle state, 40% neutral emotion.
       const roll = Math.random();
       let url: string | null = null;
 
-      if (roll < 0.5 && idx.byState['idle']?.length) {
+      if (roll < 0.6 && idx.byState['idle']?.length) {
         url = pickAnimation(idx, { type: 'state', state: 'idle' }, currentSrcRef.current);
-      } else if (roll < 0.8 && idx.byEmotion['neutral']?.length) {
-        url = pickAnimation(idx, { type: 'emotion', emotion: 'neutral' }, currentSrcRef.current);
       } else {
-        const emotions = Object.keys(idx.byEmotion);
-        if (emotions.length > 0) {
-          const nextEmotion = emotions[Math.floor(Math.random() * emotions.length)];
-          lastEmotionRef.current = nextEmotion;
-          url = pickAnimation(idx, { type: 'emotion', emotion: nextEmotion }, currentSrcRef.current);
-        }
+        url = pickAnimation(idx, { type: 'emotion', emotion: 'neutral' }, currentSrcRef.current);
       }
 
       if (url) updateSrc(url);
