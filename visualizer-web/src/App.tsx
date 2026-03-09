@@ -64,15 +64,26 @@ export default function App() {
     if (idleTimerRef.current) clearInterval(idleTimerRef.current);
     idleTimerRef.current = setInterval(() => {
       if (!indexRef.current) return;
-      const emotions = Object.keys(indexRef.current.byEmotion);
-      if (emotions.length === 0) return;
-      const nextEmotion = emotions[Math.floor(Math.random() * emotions.length)];
-      lastEmotionRef.current = nextEmotion;
-      const url = pickAnimation(
-        indexRef.current,
-        { type: 'emotion', emotion: nextEmotion },
-        currentSrcRef.current,
-      );
+      const idx = indexRef.current;
+
+      // Prefer idle-appropriate animations: 50% idle state, 30% neutral emotion,
+      // 20% random emotion for variety.
+      const roll = Math.random();
+      let url: string | null = null;
+
+      if (roll < 0.5 && idx.byState['idle']?.length) {
+        url = pickAnimation(idx, { type: 'state', state: 'idle' }, currentSrcRef.current);
+      } else if (roll < 0.8 && idx.byEmotion['neutral']?.length) {
+        url = pickAnimation(idx, { type: 'emotion', emotion: 'neutral' }, currentSrcRef.current);
+      } else {
+        const emotions = Object.keys(idx.byEmotion);
+        if (emotions.length > 0) {
+          const nextEmotion = emotions[Math.floor(Math.random() * emotions.length)];
+          lastEmotionRef.current = nextEmotion;
+          url = pickAnimation(idx, { type: 'emotion', emotion: nextEmotion }, currentSrcRef.current);
+        }
+      }
+
       if (url) updateSrc(url);
     }, cfg.idleRotationMs);
   }, [updateSrc]);
