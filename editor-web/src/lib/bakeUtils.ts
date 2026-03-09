@@ -308,9 +308,18 @@ export async function bakeAndSave(
 
   if (!hasEdits) {
     // Fast path: no edits — read original bytes directly.
-    bakedBytes = new Uint8Array(await item.file.arrayBuffer());
+    try {
+      bakedBytes = new Uint8Array(await item.file.arrayBuffer());
+    } catch (err) {
+      throw new Error(`[read-source] ${err instanceof Error ? err.message : err}`);
+    }
   } else {
-    const ff = await getOrCreateFFmpeg();
+    let ff: FFmpeg;
+    try {
+      ff = await getOrCreateFFmpeg();
+    } catch (err) {
+      throw new Error(`[ffmpeg-load] ${err instanceof Error ? err.message : err}`);
+    }
 
     const ffmpegLogTail: string[] = [];
     ff.on('log', ({ message }: { message: string }) => {
@@ -319,12 +328,17 @@ export async function bakeAndSave(
       if (ffmpegLogTail.length > 60) ffmpegLogTail.shift();
     });
 
-    const itemId = item.id;
+    const itemId = item.id.replace(/[/\\]/g, '_');
     const ext = item.file.name.split('.').pop() || 'webp';
     const inputName = `bkin_${itemId}.${ext}`;
     const outputName = `bkout_${itemId}.webp`;
 
-    const sourceBytes = new Uint8Array(await item.file.arrayBuffer());
+    let sourceBytes: Uint8Array;
+    try {
+      sourceBytes = new Uint8Array(await item.file.arrayBuffer());
+    } catch (err) {
+      throw new Error(`[read-source] ${err instanceof Error ? err.message : err}`);
+    }
     const sourceIsAnimated =
       item.type === 'image/gif' ||
       (item.type === 'image/webp' && isAnimatedWebP(sourceBytes));
@@ -337,21 +351,25 @@ export async function bakeAndSave(
     const cleanupFiles: string[] = [];
     let inputArgs: string[];
 
-    if (sourceIsAnimated) {
-      try {
-        const sequence = await decodeAnimatedToPngSequence(ff, itemId, sourceBytes, item.type);
-        cleanupFiles.push(...sequence.cleanupFiles);
-        inputArgs = sequence.inputArgs;
-      } catch {
-        // Fallback: pass raw file to FFmpeg directly.
-        await ff.writeFile(inputName, await fetchFile(item.file));
+    try {
+      if (sourceIsAnimated) {
+        try {
+          const sequence = await decodeAnimatedToPngSequence(ff, itemId, sourceBytes, item.type);
+          cleanupFiles.push(...sequence.cleanupFiles);
+          inputArgs = sequence.inputArgs;
+        } catch {
+          // Fallback: pass raw file to FFmpeg directly.
+          await ff.writeFile(inputName, new Uint8Array(sourceBytes));
+          cleanupFiles.push(inputName);
+          inputArgs = ['-i', inputName];
+        }
+      } else {
+        await ff.writeFile(inputName, new Uint8Array(sourceBytes));
         cleanupFiles.push(inputName);
         inputArgs = ['-i', inputName];
       }
-    } else {
-      await ff.writeFile(inputName, await fetchFile(item.file));
-      cleanupFiles.push(inputName);
-      inputArgs = ['-i', inputName];
+    } catch (err) {
+      throw new Error(`[ffmpeg-write-input] ${err instanceof Error ? err.message : err}`);
     }
 
     const filters = buildFilters(item, sourceIsAnimated);
@@ -397,7 +415,7 @@ export async function bakeAndSave(
           bakedBytes = await runAndRead('libwebp', '85');
         } catch (e3) {
           throw new Error(
-            `Bake failed: ${toErrorMessage(e1)} | ` +
+            `[ffmpeg-encode] ${toErrorMessage(e1)} | ` +
             `Fallback1: ${toErrorMessage(e2)} | ` +
             `Fallback2: ${toErrorMessage(e3)}`
           );
@@ -414,11 +432,15 @@ export async function bakeAndSave(
   // -------------------------------------------------------------------------
   // 2. Write baked WebP to animations/library/{outName}
   // -------------------------------------------------------------------------
-  const libraryHandle = await animationsHandle.getDirectoryHandle('library', { create: true });
-  const fileHandle = await libraryHandle.getFileHandle(outName, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(new Blob([bakedBytes.buffer as ArrayBuffer], { type: 'image/webp' }));
-  await writable.close();
+  try {
+    const libraryHandle = await animationsHandle.getDirectoryHandle('library', { create: true });
+    const fileHandle = await libraryHandle.getFileHandle(outName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(new Blob([bakedBytes.buffer as ArrayBuffer], { type: 'image/webp' }));
+    await writable.close();
+  } catch (err) {
+    throw new Error(`[write-library] ${err instanceof Error ? err.message : err}`);
+  }
 
   // -------------------------------------------------------------------------
   // 3. Read existing manifest.json (or start fresh)
@@ -456,11 +478,15 @@ export async function bakeAndSave(
   // -------------------------------------------------------------------------
   // 5. Write manifest.json back
   // -------------------------------------------------------------------------
-  const manifestHandle = await animationsHandle.getFileHandle('manifest.json', { create: true });
-  const mWritable = await manifestHandle.createWritable();
-  const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
-  await mWritable.write(new Blob([manifestBytes.buffer as ArrayBuffer], { type: 'application/json' }));
-  await mWritable.close();
+  try {
+    const manifestHandle = await animationsHandle.getFileHandle('manifest.json', { create: true });
+    const mWritable = await manifestHandle.createWritable();
+    const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
+    await mWritable.write(new Blob([manifestBytes.buffer as ArrayBuffer], { type: 'application/json' }));
+    await mWritable.close();
+  } catch (err) {
+    throw new Error(`[write-manifest] ${err instanceof Error ? err.message : err}`);
+  }
 
   // -------------------------------------------------------------------------
   // 6. Delete inbox original (best-effort)
