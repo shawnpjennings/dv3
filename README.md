@@ -50,6 +50,7 @@ dv3/
 │   ├── spotify_tool.py         # Spotify play/pause/skip/volume/search
 │   ├── timer_tool.py           # Concurrent timers with TTS alerts
 │   └── system_tools.py         # Time/date
+├── visualizer-web/             # Web visualizer — fullscreen browser display (default mode)
 ├── editor-web/                 # PRIMARY animation editor (browser-based)
 ├── editor/                     # LEGACY — headless batch conversion only (converter.py)
 ├── data/
@@ -84,10 +85,11 @@ pip install -r requirements.txt
 cp .env.example .env   # add your Gemini API keys and Spotify credentials
 # Edit config/settings.yaml — set wake_word.model_path
 
-# Run
-python main.py
+# Run (headless by default — use web visualizer for display)
+python main.py              # headless mode, serves WS on :8765
 python main.py --debug      # verbose logging
-python main.py --windowed   # no fullscreen
+python main.py --pygame     # legacy Pygame display
+python main.py --pygame --windowed  # Pygame in windowed mode
 ```
 
 ### Web Editor
@@ -127,6 +129,38 @@ See [editor-web/README.md](editor-web/README.md) for full documentation.
 
 ---
 
+## Web Visualizer
+
+The web visualizer (`visualizer-web/`) is the default display mode — a fullscreen browser-based animation player that connects to the Python backend via WebSocket.
+
+```bash
+cd visualizer-web
+npm install
+npm run dev     # → http://localhost:5174
+```
+
+**Features:**
+- Fullscreen black canvas with centered animation and radial gradient overlay
+- Crossfade transitions between animations (300ms default)
+- Idle rotation — cycles through random emotions when no backend is connected
+- Emotion/state/contextual animation switching via WebSocket events from the companion
+- Browser mic capture (16 kHz PCM) with echo cancellation, streamed to backend
+- TTS audio playback from Gemini via WebSocket
+
+**Settings panel** — press **S** or **Ctrl+Shift+V** to toggle:
+- **Gradient Opacity** (0–100%) — controls the radial vignette darkness
+- **Gradient Size** (0–100%) — how far inward the gradient extends
+- **Animation Size** (20–100%) — scale of the animation relative to viewport
+
+**Status indicators** (top-right corner):
+- **wake** (amber pulse) — flashes when wake word detected
+- **mic** (red pulse) — browser microphone active
+- **live** (green dot) — WebSocket connected to backend
+
+The visualizer works standalone (shows animations with idle rotation) or connected to the Python companion for live voice interaction.
+
+---
+
 ## Configuration
 
 All runtime settings are in `config/settings.yaml`. No sensitive values belong here — those go in `.env`.
@@ -135,6 +169,7 @@ Key settings:
 - `wake_word.model_path` — path to the `.onnx` wake word model
 - `voice.backend` — `gemini_live` (only active backend)
 - `voice.model` — Gemini model ID
+- `voice.conversation_idle_timeout` — seconds of silence after turn complete before returning to IDLE (default 8)
 - `visualizer.fullscreen` / `target_fps` / `animation_height_pct`
 - `visualizer.gradient.opacity` / `size`
 - `animations.base_dir` — root of the animation library (`data/animations`)
@@ -198,25 +233,19 @@ bd show <id>      # Issue details
 ## What's Built
 
 - [x] Voice pipeline — Gemini Live API, wake word gate, auto-reconnect, API key fallback
+- [x] Conversation idle timeout — auto-returns to wake word detection after silence
 - [x] Emotion detection cascade — tag extraction, keyword fallback, contextual triggers
 - [x] Pygame visualizer — fullscreen, radial gradient, crossfade, frame cache, 60fps
+- [x] Web visualizer — browser-based fullscreen display with settings panel (S / Ctrl+Shift+V)
 - [x] Tool dispatch — Spotify, timers, system info
-- [x] WebSocket server — broadcasts emotion/state events to web clients
+- [x] WebSocket server — broadcasts emotion/state events, bidirectional audio streaming
 - [x] Web editor — inbox/library workflow, non-destructive edits, FFmpeg WASM bake, manifest
 - [x] Manifest-based animation routing
 - [x] Comprehensive test suite
 
-## What's Still To Build
+## What's Next
 
-- [ ] **Animation library migration** — run `scripts/migrate_to_inbox.py` to move assets from old folder structure (`emotions/`, `contextual/`, `states/`) into inbox for re-tagging; commit cleanup
-- [ ] **Event tags** (dv-4vw) — additional tag types for finer-grained animation routing
-- [ ] **Update tags/triggers** (dv-1tv) — refresh `emotion_map.yaml` to match current animation library
-- [ ] **Paint feature** (dv-m48) — in-editor drawing/paint tool
-- [ ] **Image save error fix** (dv-xst, dv-3lb) — debug save errors reported by user
-- [ ] **UX improvements** (dv-5ew) — general UX polish pass
-- [ ] **Delete in inbox/library** (dv-67b) — add delete action to gallery items
-- [ ] **Popout notification label** (dv-p12) — fix notification header to say "DV3 EDITOR"
-- [ ] **Fix remove** (dv-n9a) — fix remove action bug
+- [ ] Live acceptance testing — wake word timing, audio latency, VAD interrupt
 - [ ] Smart bulb control (TAPO/Govee) — v1.5
 - [ ] Multiple animation layers — v1.5
 - [ ] Admin web panel — v1.5
