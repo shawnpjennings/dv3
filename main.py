@@ -314,6 +314,12 @@ class DV3App:
         # How long after last chunk before mic resumes (seconds)
         self._playback_tail_s: float = 0.3
 
+        # Conversation idle timeout (seconds after turn complete with no new activity)
+        voice_cfg = config.get("voice", {})
+        self._conversation_idle_timeout: float = float(
+            voice_cfg.get("conversation_idle_timeout", 8.0)
+        )
+
         # Current emotion for visualizer
         self._current_emotion: str = ""
 
@@ -580,6 +586,7 @@ class DV3App:
 
         try:
             await self.pipeline.start()
+            self.pipeline.turn_complete_event.clear()
         except (ConnectionError, RuntimeError) as exc:
             logger.error("Failed to start voice pipeline: %s", exc)
             self._set_state(STATE_IDLE)
@@ -609,10 +616,15 @@ class DV3App:
                     self._tool_dispatch_loop(), name="tool-dispatch"
                 )
             )
+            conversation_tasks.append(
+                asyncio.create_task(
+                    self._conversation_idle_monitor(), name="idle-monitor"
+                )
+            )
 
-            # Wait until any of them completes (normally the receive
-            # loops end when Gemini signals turn_complete with no further
-            # audio, or when shutdown is requested).
+            # Wait until any of them completes (the idle monitor
+            # returns when no activity follows a turn_complete signal
+            # within the configured timeout).
             done, pending = await asyncio.wait(
                 conversation_tasks,
                 return_when=asyncio.FIRST_COMPLETED,
@@ -843,6 +855,56 @@ class DV3App:
                 logger.error("Failed to send tool response: %s", exc)
             except Exception:
                 logger.exception("Error sending tool response")
+
+    async def _conversation_idle_monitor(self) -> None:
+        """End the conversation after a period of inactivity.
+
+        Waits for the pipeline's turn_complete_event, then starts a
+        countdown.  If no new content arrives (which clears the event)
+        within the configured timeout, this task returns — which triggers
+        FIRST_COMPLETED in _start_conversation and ends the session.
+        """
+        timeout = self._conversation_idle_timeout
+        poll_interval = 0.5
+
+        while (
+            not self._shutdown_event.is_set()
+            and self.state == STATE_CONVERSATION
+            and self.pipeline.is_connected
+        ):
+            # Wait for a turn to complete
+            if not self.pipeline.turn_complete_event.is_set():
+                await asyncio.sleep(poll_interval)
+                continue
+
+            # Turn completed — start idle countdown
+            logger.debug(
+                "Turn complete — starting %.1fs idle countdown", timeout
+            )
+            elapsed = 0.0
+            while elapsed < timeout:
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+
+                if self._shutdown_event.is_set():
+                    return
+                if not self.pipeline.is_connected:
+                    return
+
+                # If new content arrived, the event was cleared — reset
+                if not self.pipeline.turn_complete_event.is_set():
+                    logger.debug(
+                        "New content detected — resetting idle timer"
+                    )
+                    break
+            else:
+                # Timeout expired with no new activity
+                logger.info(
+                    "Conversation idle for %.1fs after turn complete — "
+                    "ending session",
+                    timeout,
+                )
+                return
 
     # ------------------------------------------------------------------
     # Emotion -> Animation

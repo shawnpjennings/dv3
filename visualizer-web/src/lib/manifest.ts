@@ -22,7 +22,8 @@ export interface AnimationIndex {
 export type VisualizerEvent =
   | { type: 'emotion'; emotion: string; theme?: string }
   | { type: 'state'; state: string; theme?: string }
-  | { type: 'tag'; tag: string };
+  | { type: 'tag'; tag: string }
+  | { type: 'wakeword'; confidence: number };
 
 const ANIMATIONS_BASE = '/@fs/home/shawn/projects/dv3/animations';
 

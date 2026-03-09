@@ -64,6 +64,11 @@ class VoicePipelineBase(ABC):
         # Raw text chunks consumed by the emotion parser.
         self.text_queue: asyncio.Queue[str] = asyncio.Queue()
 
+        # Turn completion signal — set when backend signals end-of-turn,
+        # cleared when new content arrives.  Used by the app to detect
+        # conversation idle and return to wake word detection.
+        self.turn_complete_event: asyncio.Event = asyncio.Event()
+
         # Internal state
         self._connected: bool = False
         self._session_id: str = ""

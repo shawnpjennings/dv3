@@ -450,6 +450,7 @@ class GeminiLivePipeline(VoicePipelineBase):
                         )
                         if mime.startswith("audio/pcm") and b64_data:
                             pcm_bytes = base64.b64decode(b64_data)
+                            self.turn_complete_event.clear()
                             await self._audio_out_queue.put(pcm_bytes)
                         elif b64_data:
                             # Try decoding anyway for non-pcm audio
@@ -463,6 +464,7 @@ class GeminiLivePipeline(VoicePipelineBase):
                     if "text" in part:
                         text = part["text"]
                         logger.debug("Received text part: %s", text[:100])
+                        self.turn_complete_event.clear()
                         await self._text_out_queue.put(text)
                         await self.text_queue.put(text)
                     # Log unknown part types
@@ -474,6 +476,7 @@ class GeminiLivePipeline(VoicePipelineBase):
             if output_tx and "text" in output_tx:
                 text = output_tx["text"]
                 logger.debug("Output transcription: %s", text[:100])
+                self.turn_complete_event.clear()
                 await self._text_out_queue.put(text)
                 await self.text_queue.put(text)
 
@@ -481,6 +484,7 @@ class GeminiLivePipeline(VoicePipelineBase):
                 logger.debug("Server turn complete")
                 # Signal end-of-turn to audio consumer (empty bytes sentinel)
                 await self._audio_out_queue.put(b"")
+                self.turn_complete_event.set()
 
             if sc.get("interrupted"):
                 logger.debug("Server response interrupted by user input")

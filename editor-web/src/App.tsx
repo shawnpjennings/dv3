@@ -930,6 +930,11 @@ function AppContent() {
                 onToggleDv3Preview={activeInboxAsset ? () => {} : () => setDv3PreviewMode(!dv3PreviewMode)}
                 onUpdateAsset={activeInboxAsset ? () => {} : updateAsset}
                 onApplyEdit={applyEdit}
+                onResetEdits={activeInboxId ? () => {
+                  setInboxItems(prev => prev.map(i =>
+                    i.id === activeInboxId ? { ...i, editStack: [], historyIndex: -1 } : i
+                  ));
+                } : undefined}
               />
             </>
           )}

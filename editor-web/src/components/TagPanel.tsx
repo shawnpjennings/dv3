@@ -58,7 +58,8 @@ export function TagPanel({
       setSelectedEmotions(libraryAsset.emotions ?? []);
       setSelectedStates(libraryAsset.states ?? []);
       setCustomTags(libraryAsset.tags ?? []);
-      setFilename(libraryAsset.file.replace(/\.[^/.]+$/, ''));
+      const basename = libraryAsset.file.split('/').pop() ?? libraryAsset.file;
+      setFilename(basename.replace(/\.[^/.]+$/, ''));
       setTheme(libraryAsset.theme ?? 'dark');
     } else {
       setSelectedEmotions([]);

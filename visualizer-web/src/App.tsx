@@ -42,6 +42,8 @@ export default function App() {
   const [status, setStatus] = useState('Loading...');
   const [wsConnected, setWsConnected] = useState(false);
   const [micActive, setMicActive] = useState(false);
+  const [wakewordActive, setWakewordActive] = useState(false);
+  const wakewordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [config, setConfig] = useState<VisualizerConfig>(DEFAULT_CONFIG);
   const [showSettings, setShowSettings] = useState(false);
   const indexRef = useRef<AnimationIndex | null>(null);
@@ -83,6 +85,14 @@ export default function App() {
   }, []);
 
   const handleEvent = useCallback((event: VisualizerEvent, cfg: VisualizerConfig) => {
+    // Wake word indicator — flash amber for 2 seconds
+    if (event.type === 'wakeword') {
+      setWakewordActive(true);
+      if (wakewordTimerRef.current) clearTimeout(wakewordTimerRef.current);
+      wakewordTimerRef.current = setTimeout(() => setWakewordActive(false), 2000);
+      return;
+    }
+
     if (!indexRef.current) return;
     stopIdleRotation();
 
@@ -189,6 +199,10 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 's' || e.key === 'S') setShowSettings((v) => !v);
+      if (e.ctrlKey && e.shiftKey && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        setShowSettings((v) => !v);
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -210,6 +224,13 @@ export default function App() {
       )}
       {/* Status indicator */}
       <div className="absolute top-3 right-3 pointer-events-none flex items-center gap-2 z-10">
+        {/* Wake word indicator */}
+        {wakewordActive && (
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span className="text-amber-400/70 text-xs font-mono">wake</span>
+          </div>
+        )}
         {/* Mic indicator */}
         <div className="flex items-center gap-1">
           <div className={`w-2 h-2 rounded-full ${

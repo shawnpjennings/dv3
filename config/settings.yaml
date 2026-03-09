@@ -18,6 +18,7 @@ voice:
   audio_format: "int16"
   reconnect_max_retries: 5
   reconnect_base_delay: 1.0  # seconds, exponential backoff
+  conversation_idle_timeout: 8.0  # seconds of silence after turn complete before returning to IDLE
 
 # Audio Devices (null = system default via PulseAudio)
 audio:

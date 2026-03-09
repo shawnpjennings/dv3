@@ -15,6 +15,7 @@ interface EditorPanelProps {
   onToggleDv3Preview: () => void;
   onUpdateAsset: (id: string, updates: Partial<Asset>) => void;
   onApplyEdit: (type: ActionType, value: number | boolean) => void;
+  onResetEdits?: () => void;
 }
 
 export const EditorPanel: React.FC<EditorPanelProps> = ({
@@ -27,6 +28,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
   onToggleDv3Preview,
   onUpdateAsset,
   onApplyEdit,
+  onResetEdits,
 }) => {
   const PREVIEW_SIZE = 750;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -271,10 +273,14 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
   const bgColorHex = `#${Math.max(0, Math.min(0xffffff, bgColorValue)).toString(16).padStart(6, '0')}`;
 
   const handleResetEdits = () => {
-    onUpdateAsset(activeAsset.id, {
-      editStack: [],
-      historyIndex: -1,
-    });
+    if (onResetEdits) {
+      onResetEdits();
+    } else {
+      onUpdateAsset(activeAsset.id, {
+        editStack: [],
+        historyIndex: -1,
+      });
+    }
   };
 
   return (
