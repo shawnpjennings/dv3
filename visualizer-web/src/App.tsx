@@ -26,7 +26,14 @@ const DEFAULT_CONFIG: VisualizerConfig = {
   wsUrl: 'ws://localhost:8765/ws',
 };
 
+const STORAGE_KEY = 'dv3-visualizer-config';
+
 async function loadConfig(): Promise<VisualizerConfig> {
+  // User overrides from localStorage take priority
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) return { ...DEFAULT_CONFIG, ...JSON.parse(stored) };
+  } catch { /* ignore parse errors */ }
   try {
     const res = await fetch('/config.json');
     if (!res.ok) return DEFAULT_CONFIG;
@@ -35,6 +42,13 @@ async function loadConfig(): Promise<VisualizerConfig> {
   } catch {
     return DEFAULT_CONFIG;
   }
+}
+
+function saveConfig(cfg: VisualizerConfig) {
+  try {
+    const { animationSizePercent, gradientOpacity, gradientSize } = cfg;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ animationSizePercent, gradientOpacity, gradientSize }));
+  } catch { /* storage full or disabled */ }
 }
 
 export default function App() {
@@ -268,7 +282,11 @@ export default function App() {
             min={0}
             max={100}
             value={config.gradientOpacity}
-            onChange={(e) => setConfig((c) => ({ ...c, gradientOpacity: Number(e.target.value) }))}
+            onChange={(e) => {
+              const updated = { ...config, gradientOpacity: Number(e.target.value) };
+              setConfig(updated);
+              saveConfig(updated);
+            }}
             className="w-full accent-white/50"
           />
           <label className="flex items-center justify-between">
@@ -280,7 +298,11 @@ export default function App() {
             min={0}
             max={100}
             value={config.gradientSize}
-            onChange={(e) => setConfig((c) => ({ ...c, gradientSize: Number(e.target.value) }))}
+            onChange={(e) => {
+              const updated = { ...config, gradientSize: Number(e.target.value) };
+              setConfig(updated);
+              saveConfig(updated);
+            }}
             className="w-full accent-white/50"
           />
           <label className="flex items-center justify-between">
@@ -292,7 +314,11 @@ export default function App() {
             min={20}
             max={100}
             value={config.animationSizePercent}
-            onChange={(e) => setConfig((c) => ({ ...c, animationSizePercent: Number(e.target.value) }))}
+            onChange={(e) => {
+              const updated = { ...config, animationSizePercent: Number(e.target.value) };
+              setConfig(updated);
+              saveConfig(updated);
+            }}
             className="w-full accent-white/50"
           />
         </div>
