@@ -272,7 +272,7 @@ function AppContent() {
       // of the animations/ root.  This prevents nested library/library/ folders.
       const name = handle.name.toLowerCase();
       if (name === 'library' || name === 'inbox') {
-        addToast(`You selected the "${handle.name}" subfolder. Please select the parent "animations" folder instead.`, 'error');
+        addToast(`Select the "animations" folder (the parent of inbox/ and library/), not the "${handle.name}" subfolder.`, 'error');
         return;
       }
 
@@ -887,7 +887,7 @@ function AppContent() {
               title="Connect animations folder to enable save"
             >
               <FolderOpen className="w-3.5 h-3.5" />
-              <span>Connect folder</span>
+              <span>Connect animations/</span>
             </button>
           )}
           <button
