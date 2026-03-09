@@ -109,17 +109,24 @@ function AppContent() {
 
         let libraryLoaded = false;
         if (savedHandle) {
-          // Re-verify permission (browser requires re-grant after page reload)
-          const typedHandle = savedHandle as DirHandle;
-          let perm = await typedHandle.queryPermission({ mode: 'readwrite' });
-          if (perm === 'prompt') {
-            // Proactively request so the library loads on startup
-            perm = await typedHandle.requestPermission({ mode: 'readwrite' });
-          }
-          if (perm === 'granted') {
-            setDirHandle(typedHandle);
-            await loadLibrary(typedHandle);
-            libraryLoaded = true;
+          // Guard against a previously-stored handle that points at a
+          // subdirectory (library/ or inbox/) instead of animations/ root.
+          const hName = savedHandle.name.toLowerCase();
+          if (hName === 'library' || hName === 'inbox') {
+            console.warn(`Stored directory handle "${savedHandle.name}" is a subdirectory — ignoring. Please reconnect the parent "animations" folder.`);
+          } else {
+            // Re-verify permission (browser requires re-grant after page reload)
+            const typedHandle = savedHandle as DirHandle;
+            let perm = await typedHandle.queryPermission({ mode: 'readwrite' });
+            if (perm === 'prompt') {
+              // Proactively request so the library loads on startup
+              perm = await typedHandle.requestPermission({ mode: 'readwrite' });
+            }
+            if (perm === 'granted') {
+              setDirHandle(typedHandle);
+              await loadLibrary(typedHandle);
+              libraryLoaded = true;
+            }
           }
         }
 
@@ -260,6 +267,15 @@ function AppContent() {
     try {
       const handle = await (window as unknown as { showDirectoryPicker: (opts?: object) => Promise<DirHandle> })
         .showDirectoryPicker({ mode: 'readwrite', startIn: 'documents' });
+
+      // Guard: reject if user picked a subdirectory (library/ or inbox/) instead
+      // of the animations/ root.  This prevents nested library/library/ folders.
+      const name = handle.name.toLowerCase();
+      if (name === 'library' || name === 'inbox') {
+        addToast(`You selected the "${handle.name}" subfolder. Please select the parent "animations" folder instead.`, 'error');
+        return;
+      }
+
       await saveDirectoryHandle(handle);
       setDirHandle(handle);
       setSaveStatus('');
